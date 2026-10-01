@@ -1,0 +1,23 @@
+# Render free tier (no card): Docker web service with WebSockets. Set the secrets in the dashboard.
+services:
+  - type: web
+    name: smart-scheduler
+    runtime: docker
+    plan: free
+    region: virginia
+    healthCheckPath: /health
+    envVars:
+      - key: TTS_ENABLED
+        value: "true"
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: DEFAULT_TIMEZONE
+        value: Asia/Kolkata
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CALENDAR_CREDS_JSON
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_JSON
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Scheduler</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <h1>Smart Scheduler</h1>
+        <p class="sub">Voice agent that finds and books meeting times on Google Calendar</p>
+      </div>
+      <div class="status" id="status">
+        <span class="pill" id="conn">connecting…</span>
+        <button class="pill clickable" id="calmode" title="Connect or replace the Google Calendar token">Calendar: checking…</button>
+        <span class="pill" id="ttsmode"></span>
+      </div>
+    </header>
+
+    <div class="overlay" id="calpanel" hidden>
+      <div class="panel">
+        <h2 id="calpanel-title">Connect Google Calendar</h2>
+        <p class="hint">The agent reads and books on a real Google Calendar. Connect yours to try it against your own schedule; it stays tied to this browser only.</p>
+        <p class="hint" id="calpanel-current" hidden></p>
+        <div class="row">
+          <button type="button" id="calsignin">Sign in with Google</button>
+          <button type="button" id="caldisconnect" class="secondary" hidden>Disconnect (use default)</button>
+          <button type="button" id="calclose" class="secondary">Close</button>
+        </div>
+        <details class="advanced">
+          <summary class="hint">Advanced: upload a token.json instead</summary>
+          <p class="hint">Run <code>uv run scripts/authorize_google.py</code> in the project folder; it writes <code>token.json</code>. Choose that file:</p>
+          <form id="calform">
+            <input type="file" id="calfile" accept=".json,application/json" required />
+            <div class="row"><button type="submit" id="calsubmit">Upload token</button></div>
+          </form>
+        </details>
+        <p class="hint status" id="calstatus"></p>
+      </div>
+    </div>
+
+    <section class="hud">
+      <label class="toggle"><input type="checkbox" id="autolisten" checked /> Auto-listen after reply</label>
+    </section>
+
+    <section class="transcript" id="transcript">
+      <div class="msg bot">Hi! Tell me what you'd like to schedule, for example "I need a 30-minute meeting on Tuesday afternoon".</div>
+    </section>
+
+    <footer>
+      <button id="mic" class="mic" title="Click to talk (or hold Space)">
+        <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
+      </button>
+      <div class="interim" id="interim"></div>
+      <form id="textform" autocomplete="off">
+        <input id="textin" placeholder="…or type here and press Enter" />
+      </form>
+    </footer>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
