@@ -56,6 +56,25 @@ class GoogleCalendar:
         with self._request_lock:
             return request.execute()
 
+    def _get_calendar_ids(self) -> list[str]:
+        """Returns all calendar IDs accessible by the user including sub-calendars."""
+        calendar_ids = []
+        page_token = None
+        while True:
+            resp = self._execute(
+                self.service.calendarList().list(pageToken=page_token)
+            )
+            for item in resp.get("items", []):
+                cal_id = item.get("id")
+                if cal_id and cal_id != self.holiday_calendar_id:
+                    calendar_ids.append(cal_id)
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+        if not calendar_ids:
+            calendar_ids = [self.calendar_id]
+        return calendar_ids
+
     @classmethod
     def from_token(
         cls, token_json: str = "", token_file: str = "", calendar_id: str = "primary"
@@ -158,34 +177,46 @@ class GoogleCalendar:
 
     def _list(self, start: datetime, end: datetime, query: str | None = None) -> list[Event]:
         items: list[dict] = []
-        page_token = None
         calendar_tz = start.tzinfo
-        while True:
-            resp = self._execute(
-                self.service.events().list(
-                    calendarId=self.calendar_id,
-                    timeMin=start.astimezone(UTC).isoformat(),
-                    timeMax=end.astimezone(UTC).isoformat(),
-                    singleEvents=True,
-                    orderBy="startTime",
-                    q=query or None,
-                    maxResults=250,
-                    pageToken=page_token,
+        calendar_ids = self._get_calendar_ids()
+
+        for cal_id in calendar_ids:
+            page_token = None
+            while True:
+                resp = self._execute(
+                    self.service.events().list(
+                        calendarId=cal_id,
+                        timeMin=start.astimezone(UTC).isoformat(),
+                        timeMax=end.astimezone(UTC).isoformat(),
+                        singleEvents=True,
+                        orderBy="startTime",
+                        q=query or None,
+                        maxResults=250,
+                        pageToken=page_token,
+                    )
                 )
-            )
-            items.extend(resp.get("items", []))
-            if resp.get("timeZone"):
-                calendar_tz = ZoneInfo(resp["timeZone"])
-            page_token = resp.get("nextPageToken")
-            if not page_token:
-                break
+                items.extend(resp.get("items", []))
+                if resp.get("timeZone"):
+                    calendar_tz = ZoneInfo(resp["timeZone"])
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+
         events = []
+        seen_ids = set()
         for item in items:
+            item_id = item.get("id")
+            if item_id in seen_ids:
+                continue
             if item.get("status") == "cancelled":
                 continue
             ev = self._to_event(item, calendar_tz)
             if ev is not None:
                 events.append(ev)
+                if item_id:
+                    seen_ids.add(item_id)
+        
+        events.sort(key=lambda e: e.start)
         return events
 
     @staticmethod
