@@ -212,7 +212,7 @@ class ToolRunner:
         if a.get("exclude_holidays"):
             query.exclude_dates = {h.day for h in holidays}
         slots = find_free_slots(busy, query, now)
-        busy_in_window = [b for b in busy if b.end > start and b.start < end]
+        busy_in_window = sorted([b for b in busy if b.end > start and b.start < end], key=lambda b: b.start)
         total_available = len(find_free_slots(busy, replace(query, max_results=200, max_per_day=200), now))
         blocks = free_blocks(busy, query, now)
         result: dict = {
