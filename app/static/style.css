@@ -1,66 +1,43 @@
-:root {
-  --bg-dark: #050b14;
-  --panel-bg: rgba(9, 23, 38, 0.7);
-  --line-cyan: #0088cc;
-  --cyan-glow: #00d2ff;
-  --text-main: #b2e3ff;
-  --text-muted: #537d99;
-  --accent-orange: #f0a73a;
-  --ok-green: #37c26a;
-  --user-msg: rgba(18, 54, 92, 0.8);
-  --bot-msg: rgba(10, 32, 54, 0.8);
-}
-
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden; /* Unterbindet Scrollen der Hauptseite */
-  font-family: 'Courier New', Courier, monospace, sans-serif;
-  background-color: var(--bg-dark);
-  color: var(--text-main);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.hud-container {
-  width: 100%;
-  max-width: 1200px;
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-  gap: 8px;
-  position: relative;
-}
-
 /* =========================================================
-   HANDY / MOBIL MODUS (Kompakt & Fixiert ohne Äußeres Scrollen)
+   HANDY / MOBIL MODUS (Kompakt & Ohne Äußeres Scrollen)
    ========================================================= */
 body.mode-mobile {
   overflow: hidden !important;
+  height: 100dvh;
 }
 
 body.mode-mobile .hud-container {
   max-width: 100%;
-  height: 100dvh; /* Nutzt exakt die Handy-Bildschirmhöhe */
-  padding: 10px;
+  height: 100dvh; /* Exakte Höhe des Mobil-Bildschirms */
+  padding: 8px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  overflow: hidden;
 }
 
 body.mode-mobile .desktop-only { display: none !important; }
 body.mode-mobile .mobile-only { display: block !important; }
 
-body.mode-mobile .top-bar {
-  flex-shrink: 0;
-  padding-bottom: 4px;
+body.mode-mobile .logo-title-desktop { display: none; }
+body.mode-mobile .logo-title-mobile {
+  display: block;
+  font-size: 18px;
+  font-weight: bold;
+  letter-spacing: 4px;
+  color: #fff;
+  text-shadow: 0 0 10px var(--cyan-glow);
 }
+
+body.mode-mobile .header-online-mobile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-main);
+  letter-spacing: 1px;
+}
+body.mode-mobile .online-dot { color: var(--ok-green); font-size: 9px; }
 
 body.mode-mobile .grid-layout {
   flex: 1;
@@ -69,7 +46,7 @@ body.mode-mobile .grid-layout {
   align-items: center;
   justify-content: flex-start;
   overflow: hidden;
-  gap: 6px;
+  gap: 4px;
 }
 
 body.mode-mobile .col-center {
@@ -81,10 +58,10 @@ body.mode-mobile .col-center {
   overflow: hidden;
 }
 
-/* Verkleinerte Radar-Grafik, damit alles perfekt ohne Scrollen passt */
+/* Kompaktere Radar-Grafik für Mobile */
 body.mode-mobile .radar-display {
-  width: 170px;
-  height: 170px;
+  width: 160px;
+  height: 160px;
   margin: 4px 0;
   border-radius: 50%;
   flex-shrink: 0;
@@ -93,27 +70,27 @@ body.mode-mobile .radar-display {
   justify-content: center;
   align-items: center;
 }
-body.mode-mobile .radar-circle.outer { width: 160px; height: 160px; }
-body.mode-mobile .radar-circle.mid { width: 120px; height: 120px; }
-body.mode-mobile .radar-circle.inner { width: 80px; height: 80px; }
-body.mode-mobile .radar-crosshair { width: 160px; height: 160px; }
+body.mode-mobile .radar-circle.outer { width: 150px; height: 150px; }
+body.mode-mobile .radar-circle.mid { width: 110px; height: 110px; }
+body.mode-mobile .radar-circle.inner { width: 70px; height: 70px; }
+body.mode-mobile .radar-crosshair { width: 150px; height: 150px; }
 
 body.mode-mobile .globe-lines {
   position: absolute;
-  width: 80px; height: 80px;
+  width: 70px; height: 70px;
   border-radius: 50%;
   border: 1px solid var(--line-cyan);
 }
 
 body.mode-mobile .mobile-status-text {
   color: var(--accent-orange);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 2px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   flex-shrink: 0;
 }
 
-/* Chatverlauf: Scrollbar NUR im Chatbereich */
+/* Scrollen NUR im Chatbereich erlaubt */
 body.mode-mobile .transcript {
   width: 100%;
   flex: 1;
@@ -121,8 +98,7 @@ body.mode-mobile .transcript {
   background: rgba(5, 11, 20, 0.4);
   border: 1px solid var(--line-cyan);
   border-radius: 4px;
-  padding: 8px;
-  margin-bottom: 6px;
+  padding: 6px;
 }
 
 body.mode-mobile .bottom-bar {
@@ -130,5 +106,16 @@ body.mode-mobile .bottom-bar {
   flex-shrink: 0;
   display: flex;
   gap: 8px;
-  padding-bottom: 4px;
+  padding-top: 4px;
+}
+
+body.mode-mobile .input-container {
+  border-radius: 4px;
+  border: 1px solid var(--line-cyan);
+  background: rgba(9, 23, 38, 0.9);
+}
+
+body.mode-mobile .mic {
+  width: 40px; height: 40px;
+  border: 1px solid var(--cyan-glow);
 }
