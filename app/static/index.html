@@ -6,14 +6,16 @@
   <title>AXIOM</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
+<body class="mode-pc">
   <div class="hud-container">
     <!-- Top Bar -->
     <header class="top-bar">
-      <div class="logo-title">A.X.I.O.M</div>
+      <div class="logo-title-desktop">A.X.I.O.M</div>
+      <div class="header-online-mobile"><span class="online-dot">●</span> ONLINE</div>
+      <div class="logo-title-mobile">A X I O M</div>
       <div class="top-right">
-        <span class="signal">SIGNAL // LIVE</span>
-        <span class="rec-dot">● REC</span>
+        <span class="signal desktop-only">SIGNAL // LIVE</span>
+        <span class="rec-dot desktop-only">● REC</span>
         <button class="icon-btn" id="menu-toggle-btn" title="Menü öffnen">+</button>
       </div>
     </header>
@@ -21,7 +23,7 @@
     <!-- Main Grid -->
     <main class="grid-layout">
       <!-- Left Column: Status -->
-      <aside class="col-left">
+      <aside class="col-left desktop-only">
         <div class="hud-box">
           <div class="box-header">STATUS <span class="box-num">01</span></div>
           
@@ -58,29 +60,32 @@
         </div>
       </aside>
 
-      <!-- Center Column: Kleines Radar & Haupt-Chatverlauf -->
+      <!-- Center Column: Radar & Haupt-Chatverlauf -->
       <section class="col-center">
-        <!-- Verkleinertes Radar/Platzhalter -->
+        <!-- Radar Display -->
         <div class="radar-display">
           <div class="radar-circle outer"></div>
           <div class="radar-circle mid"></div>
           <div class="radar-circle inner"></div>
           <div class="radar-crosshair"></div>
           <div class="radar-sweep"></div>
+          <div class="globe-lines"></div>
         </div>
 
-        <div class="status-pills" id="status">
+        <div class="status-pills desktop-only" id="status">
           <span class="pill" id="conn">verbinde…</span>
         </div>
 
-        <!-- Nachrichtenverlauf (Vergrößert) -->
+        <div class="mobile-status-text mobile-only">&gt;&gt; AXIOM BEREIT</div>
+
+        <!-- Nachrichtenverlauf -->
         <section class="transcript" id="transcript">
           <div class="msg bot">A.X.I.O.M bereit. Wie kann ich dir helfen?</div>
         </section>
       </section>
 
-      <!-- Right Column: Notizen (Vergrößert) -->
-      <aside class="col-right">
+      <!-- Right Column: Notizen -->
+      <aside class="col-right desktop-only">
         <div class="hud-box notes-box">
           <div class="box-header">NOTIZEN <span class="box-num">02</span></div>
           <p class="notes-content">Noch keine Notizen gespeichert.</p>
@@ -97,16 +102,17 @@
         </button>
       </form>
       <div class="interim" id="interim"></div>
-      <label class="toggle"><input type="checkbox" id="autolisten" checked /> Auto-Listen</label>
+      <label class="toggle desktop-only"><input type="checkbox" id="autolisten" checked /> Auto-Listen</label>
     </footer>
 
-    <!-- Slide-Out Menü (von rechts nach links, getriggert durch "+") -->
+    <!-- Slide-Out Menü -->
     <div class="side-drawer" id="side-drawer">
       <div class="drawer-header">
-        <span>EINSTELLUNGEN & KALENDER</span>
+        <span>EINSTELLUNGEN</span>
         <button type="button" id="drawer-close" class="close-btn">✕</button>
       </div>
       <div class="drawer-content">
+        <!-- Google Kalender -->
         <div class="cal-section">
           <h3 id="calpanel-title">Google Kalender</h3>
           <p class="hint" id="calpanel-current"></p>
@@ -123,6 +129,17 @@
             </form>
           </details>
           <p class="hint status" id="calstatus"></p>
+        </div>
+
+        <div class="hud-divider"></div>
+
+        <!-- Umschalter: PC vs. Handy -->
+        <div class="device-switch-section">
+          <h3>GERÄTE-ANSICHT</h3>
+          <div class="switch-buttons">
+            <button type="button" id="btn-mode-pc" class="device-btn active">PC</button>
+            <button type="button" id="btn-mode-mobile" class="device-btn">Handy</button>
+          </div>
         </div>
       </div>
     </div>
