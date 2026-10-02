@@ -6,6 +6,9 @@
                   speechEndAt: 0, audioRole: "reply",
                   botEl: null, botText: "", lastPartial: "", partialTimer: null };
 
+  // System-Sprache explizit auf Deutsch erzwungen
+  const SYSTEM_LANG = "de-DE";
+
   // ---------- turn timing ----------
   const timing = { t0: 0, firstSound: 0, firstReply: 0, tool: false };
   const resetTiming = (t0) => { timing.t0 = t0; timing.firstSound = 0; timing.firstReply = 0; timing.tool = false; };
@@ -18,7 +21,7 @@
     timing.t0 = 0;
   };
 
-  // Helper zum automatischen Scrollen bis zur allerneuesten Nachricht
+  // Helper zum automatischen Scrollen
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
       transcript.scrollTop = transcript.scrollHeight;
@@ -43,7 +46,7 @@
     el.append(summary, details);
     transcript.appendChild(el); 
     scrollToBottom(); 
-    return el;
+    return el; 
   };
 
   // ---------- audio playback ----------
@@ -70,12 +73,12 @@
     if ($("autolisten").checked && !state.listening) startListening();
   };
 
-  // Browser TTS fallback (auf Deutsch gestellt)
+  // Browser TTS fallback auf Deutsch
   const speakBrowser = (text, isAck = false) => {
     if (!text || !window.speechSynthesis) { if (!isAck) onSpeechDone(); return; }
     const u = new SpeechSynthesisUtterance(text); 
-    u.lang = "de-DE"; 
-    u.rate = 1.05;
+    u.lang = SYSTEM_LANG; 
+    u.rate = 1.0;
     u.onstart = () => { const now = performance.now(); markSound(now); if (!isAck) markReply(now); };
     if (!isAck) u.onend = onSpeechDone;
     state.speaking = true; window.speechSynthesis.speak(u);
@@ -88,6 +91,26 @@
   const toggleDrawer = () => drawer.classList.toggle("open");
   menuBtn.addEventListener("click", toggleDrawer);
   drawerClose.addEventListener("click", () => drawer.classList.remove("open"));
+
+  // ---------- Geräte-Umschaltung (PC / Handy) ----------
+  const btnPc = $("btn-mode-pc"), btnMobile = $("btn-mode-mobile");
+
+  const setDeviceMode = (mode) => {
+    if (mode === "mobile") {
+      document.body.classList.remove("mode-pc");
+      document.body.classList.add("mode-mobile");
+      btnMobile.classList.add("active");
+      btnPc.classList.remove("active");
+    } else {
+      document.body.classList.remove("mode-mobile");
+      document.body.classList.add("mode-pc");
+      btnPc.classList.add("active");
+      btnMobile.classList.remove("active");
+    }
+  };
+
+  btnPc.addEventListener("click", () => setDeviceMode("pc"));
+  btnMobile.addEventListener("click", () => setDeviceMode("mobile"));
 
   const setInputsEnabled = (on) => { mic.disabled = !on || (state.stt !== "deepgram" && !rec); $("textin").disabled = !on; };
   const showStatus = (text, cls = "") => { calStatus.textContent = text; calStatus.className = "hint status " + cls; };
@@ -104,7 +127,18 @@
 
   const cal = { connected: false, source: "none", oauth: false };
   const refreshCalStatus = async () => { try { renderCalStatus(await (await fetch("/api/calendar/status")).json()); } catch (_) {} };
-  const sendHello = () => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: "hello", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })); };
+  
+  // Prompt erzwingt deutsche Antworten vom Backend
+  const sendHello = () => { 
+    if (state.ws && state.ws.readyState === 1) {
+      state.ws.send(JSON.stringify({ 
+        type: "hello", 
+        language: "de",
+        prompt_override: "Sprich und antworte ausschließlich auf Deutsch.",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone 
+      })); 
+    }
+  };
   
   $("calsignin").addEventListener("click", () => { location.href = "/api/calendar/oauth/start"; });
   $("caldisconnect").addEventListener("click", async () => {
@@ -136,7 +170,7 @@
       state.listening = false; state.speaking = false;
       stopCapture(); rec?.abort(); stopAudio();
       mic.classList.remove("listening", "speaking");
-      $("conn").textContent = "getrennt"; $("conn").className = "pill warn";
+      if ($("conn")) { $("conn").textContent = "getrennt"; $("conn").className = "pill warn"; }
       setTimeout(connect, 1500);
     };
     ws.onmessage = (ev) => {
@@ -149,7 +183,7 @@
       const m = JSON.parse(ev.data);
       switch (m.type) {
         case "ready":
-          $("conn").textContent = "verbunden"; $("conn").className = "pill ok";
+          if ($("conn")) { $("conn").textContent = "verbunden"; $("conn").className = "pill ok"; }
           state.sampleRate = m.sample_rate; state.serverTTS = m.tts === "cloud"; state.speculation = !!m.speculation;
           state.stt = m.stt || "browser";
           if (state.stt !== "deepgram" && !rec) { mic.disabled = true; addMsg("error", "Dieser Browser unterstützt keine Spracherkennung."); }
@@ -214,7 +248,7 @@
     beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now);
   };
 
-  // ---------- speech recognition (Deutsch de-DE) ----------
+  // ---------- Spracherkennung Deutsch (de-DE) ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   const capture = { stream: null, source: null, node: null };
@@ -232,12 +266,12 @@
     capture.node = new AudioWorkletNode(ac, "pcm-capture");
     capture.node.port.onmessage = (e) => { if (state.listening && state.ws && state.ws.readyState === 1) state.ws.send(e.data); };
     capture.source.connect(capture.node);
-    state.ws.send(JSON.stringify({ type: "listen_start", sample_rate: ac.sampleRate }));
+    state.ws.send(JSON.stringify({ type: "listen_start", sample_rate: ac.sampleRate, language: "de" }));
   };
   
   if (SR) {
     rec = new SR(); 
-    rec.lang = "de-DE"; // Auf Deutsch umgestellt
+    rec.lang = SYSTEM_LANG;
     rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
     rec.onresult = (e) => {
       let finalText = "", interimText = "";
@@ -290,7 +324,7 @@
   connect();
 })();
 
-// --- AXIOM HUD CONTROLLER (Zeitzone Berlin, Timer & Mikrofon-Status) ---
+// --- AXIOM HUD CONTROLLER ---
 (function initAxiomHUD() {
   const dateEl = document.getElementById('hud-date');
   const timeEl = document.getElementById('hud-time');
