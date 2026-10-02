@@ -1,4 +1,4 @@
-"""FastAPI entrypoint: static UI, text API, SQLite chat history and the WebSocket voice loop."""
+"""FastAPI entrypoint: static UI, text API and the WebSocket voice loop."""
 
 from __future__ import annotations
 
@@ -6,14 +6,12 @@ import asyncio
 import json
 import logging
 import secrets
-import sqlite3
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agent.agent import Agent
@@ -30,63 +28,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("scheduler")
 
 STATIC = Path(__file__).parent / "static"
-DB_PATH = Path(__file__).parent.parent / "axiom_chat.db"
 MAX_SESSIONS = 200
-
-# =========================================================
-# DATENBANK-MANAGER (SQLite für 7-Tage Chat-Historie)
-# =========================================================
-class ChatDatabase:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self._init_db()
-
-    def _get_connection(self):
-        return sqlite3.connect(self.db_path)
-
-    def _init_db(self):
-        with self._get_connection() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS chat_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    uid TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    text TEXT NOT NULL,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
-
-    def save_message(self, uid: str, role: str, text: str):
-        if not uid or not text.strip():
-            return
-        with self._get_connection() as conn:
-            conn.execute(
-                "INSERT INTO chat_history (uid, role, text, timestamp) VALUES (?, ?, ?, ?)",
-                (uid, role, text.strip(), datetime.utcnow().isoformat())
-            )
-            conn.commit()
-        self.cleanup_old_messages()
-
-    def get_history(self, uid: str) -> list[dict]:
-        self.cleanup_old_messages()
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT role, text FROM chat_history WHERE uid = ? ORDER BY id ASC",
-                (uid,)
-            )
-            rows = cursor.fetchall()
-            return [{"role": r[0], "text": r[1]} for r in rows]
-
-    def cleanup_old_messages(self):
-        """Löscht alle Nachrichten, die älter als 7 Tage sind."""
-        cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
-        with self._get_connection() as conn:
-            conn.execute("DELETE FROM chat_history WHERE timestamp < ?", (cutoff,))
-            conn.commit()
-
-db = ChatDatabase(DB_PATH)
 
 
 class Runtime:
@@ -108,7 +50,9 @@ class Runtime:
         except Exception as exc:
             log.warning("Stored calendar token is unusable (%s); connect one from the UI", exc)
         if self.calendar is None:
-            log.warning("No default calendar configured.")
+            log.warning(
+                "No default calendar: visitors must sign in with Google from the UI, or set CALENDAR_CREDS_FILE/JSON"
+            )
         self.tts: TTS | None = None
         try:
             self.tts = build_tts(settings)
@@ -119,6 +63,12 @@ class Runtime:
         self.user_calendars: dict[str, tuple[GoogleCalendar, dict]] = {}
         self.ack_audio: dict[str, bytes] = {}
         self._background: set[asyncio.Task[None]] = set()
+        log.info(
+            "calendar=%s tts=%s model=%s",
+            self.calendar_source,
+            self.tts.name if self.tts else "browser",
+            self.llm.model,
+        )
 
     def calendar_for(self, uid: str | None) -> tuple[GoogleCalendar | None, str, dict]:
         if uid and uid in self.user_calendars:
@@ -147,6 +97,7 @@ class Runtime:
         calendar.holiday_calendar_id = self.holiday_calendar(info.get("timezone") or self.settings.default_timezone)
         self.user_calendars[uid] = (calendar, info)
         self._drop_sessions_for(uid)
+        log.info("calendar connected for a visitor: %s", info.get("summary") or info.get("id"))
         return self.calendar_status(uid)
 
     def disconnect_user_calendar(self, uid: str) -> dict:
@@ -166,6 +117,7 @@ class Runtime:
             inner = data.get("web") or data.get("installed") or data
             return {"client_id": inner["client_id"], "client_secret": inner["client_secret"]}
         except (ValueError, KeyError, AttributeError):
+            log.warning("GOOGLE_OAUTH_CLIENT_JSON / %s is not a Google OAuth client JSON", path)
             return None
 
     def _drop_sessions_for(self, uid: str) -> None:
@@ -189,12 +141,11 @@ class Runtime:
             tz = ZoneInfo(self.settings.default_timezone)
         s = self.settings
         session = Session(tz=tz)
-        
-        # System-Prompt für die Jarvis-Persönlichkeit & Deutsch erzwingen
+
+        # Jarvis-Persönlichkeit & Deutsch
         session.system_prompt = (
-            "Du bist AXIOM, eine hochmoderne, zuvorkommende KI im Stile von JARVIS aus Iron Man. "
-            "Antworte IMMER auf Deutsch. Sprich den Benutzer IMMER höflich mit 'Sir' an. "
-            "Halte dich präzise, professionell und auf den Punkt."
+            "Du bist AXIOM, eine zuvorkommende und hochintelligente KI im Stile von JARVIS. "
+            "Antworte ausnahmslos auf Deutsch. Sprich den Benutzer IMMER höflich mit 'Sir' an."
         )
 
         if uid:
@@ -225,8 +176,9 @@ class Runtime:
         try:
             clips = await asyncio.gather(*(self.tts.synthesize(p) for p in ACK_PHRASES))
             self.ack_audio = dict(zip(ACK_PHRASES, clips, strict=False))
+            log.info("cached %d acknowledgement clips", len(self.ack_audio))
         except Exception as exc:
-            log.warning("could not pre-synthesise acknowledgements (%s)", exc)
+            log.warning("could not pre-synthesise acknowledgements (%s); the browser will speak them", exc)
 
 
 @asynccontextmanager
@@ -237,30 +189,10 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="AXIOM AI Agent", lifespan=lifespan)
+app = FastAPI(title="Smart Scheduler AI Agent", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 app.include_router(chat.router)
 app.include_router(calendar.router)
-
-# --- Endpunkte für Historie und Nachrichten-Speicherung ---
-@app.get("/api/history")
-async def get_chat_history(request: Request):
-    uid = request.cookies.get(UID_COOKIE)
-    if not uid:
-        return JSONResponse([])
-    return JSONResponse(db.get_history(uid))
-
-@app.post("/api/history/save")
-async def save_chat_message(request: Request):
-    uid = request.cookies.get(UID_COOKIE)
-    if not uid:
-        return JSONResponse({"status": "ignored"})
-    data = await request.json()
-    role = data.get("role")
-    text = data.get("text")
-    if role and text:
-        db.save_message(uid, role, text)
-    return JSONResponse({"status": "ok"})
 
 
 @app.get("/")
