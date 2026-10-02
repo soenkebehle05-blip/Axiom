@@ -275,3 +275,76 @@
   refreshCalStatus();
   connect();
 })();
+// --- AXIOM HUD CONTROLLER (Zeitzone Berlin, Timer & Mikrofon-Status) ---
+(function initAxiomHUD() {
+  const dateEl = document.getElementById('hud-date');
+  const timeEl = document.getElementById('hud-time');
+  const uptimeEl = document.getElementById('hud-uptime');
+  const micStatusGroup = document.getElementById('hud-mic-status');
+  const micText = document.getElementById('mic-text');
+  const micBtn = document.getElementById('mic');
+
+  let activeSeconds = 0;
+  let inactivityTimer = 0;
+  const INACTIVITY_THRESHOLD = 30; // Nach 30 Sekunden Inaktivität setzt sich die Nutzungsdauer zurück
+
+  // 1. Datum & Uhrzeit in Zeitzone 'Europe/Berlin'
+  function updateBerlinTime() {
+    const now = new Date();
+    
+    // Datum formatieren: Fr, 02.10.2026
+    const dateOptions = { timeZone: 'Europe/Berlin', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' };
+    const dateStr = new Intl.DateTimeFormat('de-DE', dateOptions).format(now);
+    if (dateEl) dateEl.textContent = dateStr;
+
+    // Uhrzeit formatieren: 09:54:12
+    const timeOptions = { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+    const timeStr = new Intl.DateTimeFormat('de-DE', timeOptions).format(now);
+    if (timeEl) timeEl.textContent = timeStr;
+  }
+
+  // 2. Nutzungsdauer-Timer mit Inaktivitäts-Reset
+  function updateUptime() {
+    activeSeconds++;
+    inactivityTimer++;
+
+    if (inactivityTimer >= INACTIVITY_THRESHOLD) {
+      activeSeconds = 0; // Reset der Nutzungsdauer bei Inaktivität
+    }
+
+    const hrs = String(Math.floor(activeSeconds / 3600)).padStart(2, '0');
+    const mins = String(Math.floor((activeSeconds % 3600) / 60)).padStart(2, '0');
+    const secs = String(activeSeconds % 60).padStart(2, '0');
+
+    if (uptimeEl) {
+      uptimeEl.textContent = `${hrs} Std ${mins} Min ${secs} Sek`;
+    }
+  }
+
+  // Inaktivität zurücksetzen bei Benutzerinteraktion
+  function resetInactivity() {
+    inactivityTimer = 0;
+  }
+
+  window.addEventListener('mousemove', resetInactivity);
+  window.addEventListener('keydown', resetInactivity);
+  window.addEventListener('click', resetInactivity);
+
+  // 3. Mikrofon-Anzeige steuern (Nur AN wenn Aktivität vorhanden ist)
+  function checkMicStatus() {
+    if (micBtn && micBtn.classList.contains('listening')) {
+      if (micStatusGroup) micStatusGroup.classList.add('active');
+      if (micText) micText.textContent = 'AN';
+    } else {
+      if (micStatusGroup) micStatusGroup.classList.remove('active');
+      if (micText) micText.textContent = 'AUS';
+    }
+  }
+
+  // Intervalle starten
+  setInterval(updateBerlinTime, 1000);
+  setInterval(updateUptime, 1000);
+  setInterval(checkMicStatus, 200);
+
+  updateBerlinTime();
+})();
