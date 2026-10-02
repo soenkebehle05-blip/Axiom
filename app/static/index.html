@@ -3,148 +3,64 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AXIOM</title>
+  <title>Smart Scheduler - Axiom</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body class="mode-pc">
-  <div class="hud-container">
-    <!-- Top Bar -->
-    <header class="top-bar">
-      <div class="logo-title-desktop">A.X.I.O.M</div>
-      <div class="header-online-mobile"><span class="online-dot">●</span> ONLINE</div>
-      <div class="logo-title-mobile">A X I O M</div>
-      <div class="top-right">
-        <span class="signal desktop-only">SIGNAL // LIVE</span>
-        <span class="rec-dot desktop-only">● REC</span>
-        <button class="icon-btn" id="menu-toggle-btn" title="Menü öffnen">+</button>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <h1>Smart Scheduler</h1>
+        <p class="sub">Axiom - Ihr intelligenter persönlicher Assistent</p>
+      </div>
+      <div class="status" id="status">
+        <span class="pill" id="conn">verbinde…</span>
+        <button class="pill clickable" id="calmode" title="Google Calendar verbinden oder ändern">Calendar: prüfe…</button>
+        <button class="pill clickable danger" id="clearchat" title="Chatverlauf vollständig löschen">Chat löschen</button>
+        <span class="pill" id="ttsmode"></span>
       </div>
     </header>
 
-    <!-- Main Grid -->
-    <main class="grid-layout">
-      <!-- Left Column: Status -->
-      <aside class="col-left desktop-only">
-        <div class="hud-box">
-          <div class="box-header">STATUS <span class="box-num">01</span></div>
-          
-          <div class="status-group">
-            <span class="label">DATUM</span>
-            <div id="hud-date" class="val-date">--.--.----</div>
-          </div>
-
-          <div class="status-group">
-            <span class="label">UHRZEIT</span>
-            <div id="hud-time" class="val-time">00:00:00</div>
-          </div>
-
-          <div class="status-group">
-            <span class="label">NUTZUNGSDAUER</span>
-            <div id="hud-uptime" class="val-uptime">00 Std 00 Min 00 Sek</div>
-          </div>
-
-          <div class="status-group">
-            <span class="label">MIKROFON</span>
-            <div id="hud-mic-status" class="val-mic">
-              <span class="mic-indicator">●</span> <span id="mic-text">AUS</span>
-            </div>
-          </div>
-
-          <div class="hud-divider"></div>
-
-          <div class="tech-specs">
-            <div>0x41 58 49 4F 4D</div>
-            <div class="text-accent">&gt;&gt; DATENSTROM AKTIV</div>
-            <div class="spec-row"><span>LINK</span><span class="text-ok">OK</span></div>
-            <div class="spec-row"><span>AUDIO</span><span>BEREIT</span></div>
-          </div>
+    <div class="overlay" id="calpanel" hidden>
+      <div class="panel">
+        <h2 id="calpanel-title">Google Calendar verbinden</h2>
+        <p class="hint">Der Agent liest und bucht Termine auf einem echten Google Calendar.</p>
+        <p class="hint" id="calpanel-current" hidden></p>
+        <div class="row">
+          <button type="button" id="calsignin">Mit Google anmelden</button>
+          <button type="button" id="caldisconnect" class="secondary" hidden>Trennen</button>
+          <button type="button" id="calclose" class="secondary">Schließen</button>
         </div>
-      </aside>
-
-      <!-- Center Column: Radar & Haupt-Chatverlauf -->
-      <section class="col-center">
-        <!-- Radar Display -->
-        <div class="radar-display">
-          <div class="radar-circle outer"></div>
-          <div class="radar-circle mid"></div>
-          <div class="radar-circle inner"></div>
-          <div class="radar-crosshair"></div>
-          <div class="radar-sweep"></div>
-          <div class="globe-lines"></div>
-        </div>
-
-        <div class="status-pills desktop-only" id="status">
-          <span class="pill" id="conn">verbinde…</span>
-        </div>
-
-        <div class="mobile-status-text mobile-only">&gt;&gt; AXIOM BEREIT</div>
-
-        <!-- Nachrichtenverlauf -->
-        <section class="transcript" id="transcript">
-          <div class="msg bot">A.X.I.O.M bereit. Wie kann ich dir helfen?</div>
-        </section>
-      </section>
-
-      <!-- Right Column: Notizen -->
-      <aside class="col-right desktop-only">
-        <div class="hud-box notes-box">
-          <div class="box-header">NOTIZEN <span class="box-num">02</span></div>
-          <p class="notes-content">Noch keine Notizen gespeichert.</p>
-        </div>
-      </aside>
-    </main>
-
-    <!-- Bottom Controls & Input -->
-    <footer class="bottom-bar">
-      <form id="textform" autocomplete="off" class="input-container">
-        <input id="textin" placeholder="Nachricht an Axiom …" />
-        <button type="button" id="mic" class="mic" title="Klicken zum Sprechen">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
-        </button>
-      </form>
-      <div class="interim" id="interim"></div>
-      <label class="toggle desktop-only"><input type="checkbox" id="autolisten" checked /> Auto-Listen</label>
-    </footer>
-
-    <!-- Slide-Out Menü -->
-    <div class="side-drawer" id="side-drawer">
-      <div class="drawer-header">
-        <span>EINSTELLUNGEN</span>
-        <button type="button" id="drawer-close" class="close-btn">✕</button>
-      </div>
-      <div class="drawer-content">
-        <!-- Google Kalender -->
-        <div class="cal-section">
-          <h3 id="calpanel-title">Google Kalender</h3>
-          <p class="hint" id="calpanel-current"></p>
-          <button type="button" id="calmode" class="pill clickable">Kalender-Status prüfen...</button>
-          <div class="row-btn">
-            <button type="button" id="calsignin">Mit Google anmelden</button>
-            <button type="button" id="caldisconnect" class="secondary" hidden>Trennen</button>
-          </div>
-          <details class="advanced">
-            <summary class="hint">Erweitert: token.json hochladen</summary>
-            <form id="calform">
-              <input type="file" id="calfile" accept=".json,application/json" required />
-              <button type="submit" id="calsubmit">Token hochladen</button>
-            </form>
-          </details>
-          <p class="hint status" id="calstatus"></p>
-        </div>
-
-        <div class="hud-divider"></div>
-
-        <!-- Umschalter: PC vs. Handy -->
-        <div class="device-switch-section">
-          <h3>GERÄTE-ANSICHT</h3>
-          <div class="switch-buttons">
-            <button type="button" id="btn-mode-pc" class="device-btn active">PC</button>
-            <button type="button" id="btn-mode-mobile" class="device-btn">Handy</button>
-          </div>
-        </div>
+        <details class="advanced">
+          <summary class="hint">Erweitert: token.json hochladen</summary>
+          <p class="hint">Wählen Sie Ihre <code>token.json</code> Datei aus:</p>
+          <form id="calform">
+            <input type="file" id="calfile" accept=".json,application/json" required />
+            <div class="row"><button type="submit" id="calsubmit">Token hochladen</button></div>
+          </form>
+        </details>
+        <p class="hint status" id="calstatus"></p>
       </div>
     </div>
-  </div>
 
+    <section class="hud">
+      <label class="toggle"><input type="checkbox" id="autolisten" checked /> Nach Antwort automatisch zuhören</label>
+    </section>
+
+    <section class="transcript" id="transcript">
+      <div class="msg bot">Guten Tag, Sir. Ich bin Axiom. Wie kann ich Ihnen heute zu Diensten sein?</div>
+    </section>
+
+    <footer>
+      <button id="mic" class="mic" title="Klicken zum Sprechen (oder Leertaste gedrückt halten)">
+        <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
+      </button>
+      <div class="interim" id="interim"></div>
+      <form id="textform" autocomplete="off">
+        <input id="textin" placeholder="…oder schreiben Sie hier Ihre Nachricht, Sir" />
+      </form>
+    </footer>
+  </main>
   <script src="/static/app.js"></script>
 </body>
 </html>
