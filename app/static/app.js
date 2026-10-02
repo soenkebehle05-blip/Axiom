@@ -1,4 +1,3 @@
-// Browser side of the voice loop: Web Speech API (STT) -> WebSocket -> streamed text + PCM audio.
 (() => {
   const $ = (id) => document.getElementById(id);
   const transcript = $("transcript"), mic = $("mic"), interim = $("interim");
@@ -6,10 +5,6 @@
                   speechEndAt: 0, audioRole: "reply",
                   botEl: null, botText: "", lastPartial: "", partialTimer: null };
 
-  // System-Sprache explizit auf Deutsch erzwungen
-  const SYSTEM_LANG = "de-DE";
-
-  // ---------- turn timing ----------
   const timing = { t0: 0, firstSound: 0, firstReply: 0, tool: false };
   const resetTiming = (t0) => { timing.t0 = t0; timing.firstSound = 0; timing.firstReply = 0; timing.tool = false; };
   const markSound = (at) => { if (!timing.firstSound) timing.firstSound = at; };
@@ -21,35 +16,16 @@
     timing.t0 = 0;
   };
 
-  // Helper zum automatischen Scrollen
-  const scrollToBottom = () => {
-    requestAnimationFrame(() => {
-      transcript.scrollTop = transcript.scrollHeight;
-    });
-  };
-
-  // ---------- transcript helpers ----------
-  const addMsg = (cls, text) => { 
-    const el = document.createElement("div"); 
-    el.className = "msg " + cls; 
-    el.textContent = text; 
-    transcript.appendChild(el); 
-    scrollToBottom(); 
-    return el; 
-  };
-
+  const addMsg = (cls, text) => { const el = document.createElement("div"); el.className = "msg " + cls; el.textContent = text; transcript.appendChild(el); transcript.scrollTop = transcript.scrollHeight; return el; };
   const addTool = (name, args) => {
     const el = document.createElement("details"); el.className = "tool";
     const summary = document.createElement("summary"), details = document.createElement("pre");
     summary.textContent = `${name}(${Object.keys(args).join(", ")})`;
     details.textContent = JSON.stringify(args, null, 1);
     el.append(summary, details);
-    transcript.appendChild(el); 
-    scrollToBottom(); 
-    return el; 
+    transcript.appendChild(el); transcript.scrollTop = transcript.scrollHeight; return el;
   };
 
-  // ---------- audio playback ----------
   let ctx = null, nextTime = 0, sources = [];
   const ensureCtx = () => { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: state.sampleRate }); if (ctx.state === "suspended") ctx.resume(); return ctx; };
   const playPCM = (buf) => {
@@ -73,94 +49,62 @@
     if ($("autolisten").checked && !state.listening) startListening();
   };
 
-  // Browser TTS fallback auf Deutsch
   const speakBrowser = (text, isAck = false) => {
     if (!text || !window.speechSynthesis) { if (!isAck) onSpeechDone(); return; }
-    const u = new SpeechSynthesisUtterance(text); 
-    u.lang = SYSTEM_LANG; 
-    u.rate = 1.0;
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.05;
     u.onstart = () => { const now = performance.now(); markSound(now); if (!isAck) markReply(now); };
     if (!isAck) u.onend = onSpeechDone;
     state.speaking = true; window.speechSynthesis.speak(u);
   };
 
-  // ---------- Slide-Out Drawer & Kalender ----------
-  const drawer = $("side-drawer"), menuBtn = $("menu-toggle-btn"), drawerClose = $("drawer-close");
-  const calStatus = $("calstatus");
-
-  const toggleDrawer = () => drawer.classList.toggle("open");
-  menuBtn.addEventListener("click", toggleDrawer);
-  drawerClose.addEventListener("click", () => drawer.classList.remove("open"));
-
-  // ---------- Geräte-Umschaltung (PC / Handy) ----------
-  const btnPc = $("btn-mode-pc"), btnMobile = $("btn-mode-mobile");
-
-  const setDeviceMode = (mode) => {
-    if (mode === "mobile") {
-      document.body.classList.remove("mode-pc");
-      document.body.classList.add("mode-mobile");
-      btnMobile.classList.add("active");
-      btnPc.classList.remove("active");
-    } else {
-      document.body.classList.remove("mode-mobile");
-      document.body.classList.add("mode-pc");
-      btnPc.classList.add("active");
-      btnMobile.classList.remove("active");
-    }
-  };
-
-  btnPc.addEventListener("click", () => setDeviceMode("pc"));
-  btnMobile.addEventListener("click", () => setDeviceMode("mobile"));
-
+  const cal = { connected: false, source: "none", oauth: false };
+  const calPanel = $("calpanel"), calStatus = $("calstatus");
   const setInputsEnabled = (on) => { mic.disabled = !on || (state.stt !== "deepgram" && !rec); $("textin").disabled = !on; };
   const showStatus = (text, cls = "") => { calStatus.textContent = text; calStatus.className = "hint status " + cls; };
-
+  const openCalPanel = () => {
+    $("calpanel-title").textContent = cal.source === "you" ? "Ihr Google Calendar" : cal.connected ? "Eigenen Google Calendar nutzen" : "Google Calendar verbinden";
+    $("calsignin").textContent = cal.source === "you" ? "Konto wechseln" : "Mit Google anmelden";
+    $("calsignin").hidden = !cal.oauth; $("caldisconnect").hidden = cal.source !== "you"; $("calclose").hidden = !cal.connected;
+    showStatus(cal.oauth ? "" : "Google-Anmeldung nicht konfiguriert; Laden Sie stattdessen ein Token hoch.");
+    calPanel.hidden = false;
+  };
   const renderCalStatus = (s) => {
     cal.connected = !!s.connected; cal.source = s.source; cal.oauth = !!s.oauth_available;
     const who = s.calendar && (s.calendar.summary || s.calendar.id);
-    const label = !cal.connected ? "Kalender: Nicht verbunden"
-                : cal.source === "you" ? "Kalender: " + who : "Kalender: Standard";
-    $("calmode").textContent = label;
-    if (cal.connected && $("calpanel-current")) $("calpanel-current").textContent = "Verbunden: " + who;
+    const label = !cal.connected ? "Calendar: Nicht verbunden"
+                : cal.source === "you" ? "Calendar: " + who : "Calendar: " + (who || "Standard");
+    $("calmode").textContent = label; $("calmode").className = "pill clickable " + (cal.connected ? "ok" : "warn");
+    $("calpanel-current").hidden = !cal.connected;
+    if (cal.connected) $("calpanel-current").textContent = "Verbunden als: " + who;
     setInputsEnabled(cal.connected);
+    if (!cal.connected) openCalPanel();
   };
-
-  const cal = { connected: false, source: "none", oauth: false };
   const refreshCalStatus = async () => { try { renderCalStatus(await (await fetch("/api/calendar/status")).json()); } catch (_) {} };
+  const sendHello = () => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: "hello", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })); };
   
-  // Prompt erzwingt deutsche Antworten vom Backend
-  const sendHello = () => { 
-    if (state.ws && state.ws.readyState === 1) {
-      state.ws.send(JSON.stringify({ 
-        type: "hello", 
-        language: "de",
-        prompt_override: "Sprich und antworte ausschließlich auf Deutsch.",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone 
-      })); 
-    }
-  };
-  
+  $("calmode").addEventListener("click", openCalPanel);
+  $("calclose").addEventListener("click", () => { calPanel.hidden = true; });
   $("calsignin").addEventListener("click", () => { location.href = "/api/calendar/oauth/start"; });
   $("caldisconnect").addEventListener("click", async () => {
-    try { const res = await fetch("/api/calendar/token", { method: "DELETE" }); const data = await res.json(); renderCalStatus(data); showStatus("Getrennt.", "ok"); sendHello(); }
+    try { const res = await fetch("/api/calendar/token", { method: "DELETE" }); const data = await res.json(); renderCalStatus(data); sendHello(); }
     catch (err) { showStatus("Fehler beim Trennen: " + err.message, "err"); }
   });
 
-  $("calform").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const file = $("calfile").files[0]; if (!file) return;
-    const body = new FormData(); body.append("file", file);
-    $("calsubmit").disabled = true; showStatus("Prüfe Token…");
+  // Handler für den Chat-Löschen-Button
+  $("clearchat").addEventListener("click", async () => {
+    if (!confirm("Möchten Sie den gesamten Chatverlauf wirklich löschen, Sir?")) return;
     try {
-      const res = await fetch("/api/calendar/token", { method: "POST", body });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || res.statusText);
-      renderCalStatus(data); showStatus("Erfolgreich verbunden.", "ok"); sendHello();
-    } catch (err) { showStatus("Upload fehlgeschlagen: " + err.message, "err"); }
-    finally { $("calsubmit").disabled = false; }
+      const res = await fetch("/api/chat/clear", { method: "DELETE" });
+      if (res.ok) {
+        transcript.innerHTML = '<div class="msg bot">Sehr wohl, Sir. Der Chatverlauf wurde vollständig gelöscht. Wie kann ich Ihnen zu Diensten sein?</div>';
+      } else {
+        addMsg("error", "Fehler beim Löschen des Chatverlaufs.");
+      }
+    } catch (err) {
+      addMsg("error", "Verbindungsfehler: " + err.message);
+    }
   });
 
-  // ---------- websocket ----------
   const connect = () => {
     const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
     ws.binaryType = "arraybuffer"; state.ws = ws;
@@ -170,7 +114,7 @@
       state.listening = false; state.speaking = false;
       stopCapture(); rec?.abort(); stopAudio();
       mic.classList.remove("listening", "speaking");
-      if ($("conn")) { $("conn").textContent = "getrennt"; $("conn").className = "pill warn"; }
+      $("conn").textContent = "getrennt"; $("conn").className = "pill warn";
       setTimeout(connect, 1500);
     };
     ws.onmessage = (ev) => {
@@ -183,11 +127,10 @@
       const m = JSON.parse(ev.data);
       switch (m.type) {
         case "ready":
-          if ($("conn")) { $("conn").textContent = "verbunden"; $("conn").className = "pill ok"; }
+          $("conn").textContent = "verbunden"; $("conn").className = "pill ok";
           state.sampleRate = m.sample_rate; state.serverTTS = m.tts === "cloud"; state.speculation = !!m.speculation;
           state.stt = m.stt || "browser";
-          if (state.stt !== "deepgram" && !rec) { mic.disabled = true; addMsg("error", "Dieser Browser unterstützt keine Spracherkennung."); }
-          else mic.disabled = false;
+          mic.disabled = false;
           break;
         case "transcript":
           if (!m.final) { interim.textContent = m.text; armIdleTimer(); break; }
@@ -203,19 +146,14 @@
         case "reply_audio_start": state.audioRole = "reply"; break;
         case "token":
           clearTimeout(state.watchdog);
-          if (!state.botEl) state.botEl = addMsg("bot", ""); 
-          state.botText += m.text; 
-          state.botEl.textContent = state.botText; 
-          scrollToBottom(); 
-          break;
+          if (!state.botEl) state.botEl = addMsg("bot", ""); state.botText += m.text; state.botEl.textContent = state.botText; transcript.scrollTop = transcript.scrollHeight; break;
         case "tool_call": timing.tool = true; addTool(m.name, m.args); break;
-        case "tool_result": { const last = transcript.querySelector("details.tool:last-of-type"); if (last) last.querySelector("pre").textContent += "\n→ " + JSON.stringify(m.result, null, 1); scrollToBottom(); break; }
+        case "tool_result": { const last = transcript.querySelector("details.tool:last-of-type"); if (last) last.querySelector("pre").textContent += "\n→ " + JSON.stringify(m.result, null, 1); break; }
         case "turn_end":
           clearTimeout(state.watchdog);
           state.listenAfter = m.listen_after !== false;
           if (!state.listenAfter && state.listening) stopListening();
           if (state.botEl) state.botEl.textContent = m.text || state.botText;
-          scrollToBottom();
           if (!state.serverTTS) { state.speaking = true; speakBrowser(m.text); } break;
         case "audio_end":
           state.audioDone = true;
@@ -238,17 +176,15 @@
     resetTiming(sentAt); state.speechEndAt = 0; state.turnFinished = false; state.listenAfter = true; state.audioDone = false;
     clearTimeout(state.watchdog);
     state.watchdog = setTimeout(() => {
-      if (!state.botText) addMsg("error", "Antwort dauert länger als erwartet...");
+      if (!state.botText) addMsg("error", "Die Antwort dauert länger als erwartet.");
     }, 20000);
     ensureCtx(); if (send) state.ws.send(JSON.stringify({ type: "user_text", text }));
   };
-  
   const sendText = (text) => {
     const now = performance.now();
     beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now);
   };
 
-  // ---------- Spracherkennung Deutsch (de-DE) ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   const capture = { stream: null, source: null, node: null };
@@ -266,35 +202,22 @@
     capture.node = new AudioWorkletNode(ac, "pcm-capture");
     capture.node.port.onmessage = (e) => { if (state.listening && state.ws && state.ws.readyState === 1) state.ws.send(e.data); };
     capture.source.connect(capture.node);
-    state.ws.send(JSON.stringify({ type: "listen_start", sample_rate: ac.sampleRate, language: "de" }));
+    state.ws.send(JSON.stringify({ type: "listen_start", sample_rate: ac.sampleRate }));
   };
-  
   if (SR) {
-    rec = new SR(); 
-    rec.lang = SYSTEM_LANG;
-    rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    rec = new SR(); rec.lang = "de-DE"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
     rec.onresult = (e) => {
       let finalText = "", interimText = "";
       for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript) : (interimText += r[0].transcript));
       interim.textContent = interimText || finalText;
       if (finalText) { interim.textContent = ""; sendText(finalText); return; }
-      if (state.speculation && interimText.trim() && state.ws && state.ws.readyState === 1) {
-        clearTimeout(state.partialTimer);
-        state.partialTimer = setTimeout(() => {
-          const t = interimText.trim();
-          if (t !== state.lastPartial) { state.lastPartial = t; state.ws.send(JSON.stringify({ type: "user_partial", text: t })); }
-        }, 250);
-      }
     };
     rec.onspeechend = () => { state.speechEndAt = performance.now(); };
     rec.onend = () => { state.listening = false; mic.classList.remove("listening"); };
-    rec.onerror = (e) => { if (e.error !== "no-speech" && e.error !== "aborted") addMsg("error", "Spracherkennung: " + e.error); };
   }
-  
   const serverSTT = () => state.stt === "deepgram";
   const LISTEN_IDLE_MS = 8000;
   const armIdleTimer = () => { clearTimeout(state.idleTimer); state.idleTimer = setTimeout(() => { if (state.listening) { interim.textContent = ""; stopListening(); } }, LISTEN_IDLE_MS); };
-  
   const startListening = async () => {
     if (state.listening || state.startingCapture || state.ws?.readyState !== 1) return;
     if (!serverSTT() && !rec) return;
@@ -308,84 +231,15 @@
     } catch (err) { addMsg("error", "Mikrofon: " + (err.message || err)); stopCapture(); }
     finally { state.startingCapture = false; }
   };
-  
   const stopListening = () => {
     if (!state.listening) return;
     clearTimeout(state.idleTimer);
     if (serverSTT()) { state.listening = false; mic.classList.remove("listening"); stopCapture(); if (state.ws?.readyState === 1) state.ws.send(JSON.stringify({ type: "listen_stop" })); }
     else rec.stop();
   };
-  
   mic.addEventListener("click", () => (state.listening ? stopListening() : startListening()));
-  document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target === document.body) { e.preventDefault(); startListening(); } });
 
   $("textform").addEventListener("submit", (e) => { e.preventDefault(); sendText($("textin").value); $("textin").value = ""; });
   refreshCalStatus();
   connect();
-})();
-
-// --- AXIOM HUD CONTROLLER ---
-(function initAxiomHUD() {
-  const dateEl = document.getElementById('hud-date');
-  const timeEl = document.getElementById('hud-time');
-  const uptimeEl = document.getElementById('hud-uptime');
-  const micStatusGroup = document.getElementById('hud-mic-status');
-  const micText = document.getElementById('mic-text');
-  const micBtn = document.getElementById('mic');
-
-  let activeSeconds = 0;
-  let inactivityTimer = 0;
-  const INACTIVITY_THRESHOLD = 30;
-
-  function updateBerlinTime() {
-    const now = new Date();
-    const dateOptions = { timeZone: 'Europe/Berlin', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' };
-    const dateStr = new Intl.DateTimeFormat('de-DE', dateOptions).format(now);
-    if (dateEl) dateEl.textContent = dateStr;
-
-    const timeOptions = { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-    const timeStr = new Intl.DateTimeFormat('de-DE', timeOptions).format(now);
-    if (timeEl) timeEl.textContent = timeStr;
-  }
-
-  function updateUptime() {
-    activeSeconds++;
-    inactivityTimer++;
-
-    if (inactivityTimer >= INACTIVITY_THRESHOLD) {
-      activeSeconds = 0;
-    }
-
-    const hrs = String(Math.floor(activeSeconds / 3600)).padStart(2, '0');
-    const mins = String(Math.floor((activeSeconds % 3600) / 60)).padStart(2, '0');
-    const secs = String(activeSeconds % 60).padStart(2, '0');
-
-    if (uptimeEl) {
-      uptimeEl.textContent = `${hrs} Std ${mins} Min ${secs} Sek`;
-    }
-  }
-
-  function resetInactivity() {
-    inactivityTimer = 0;
-  }
-
-  window.addEventListener('mousemove', resetInactivity);
-  window.addEventListener('keydown', resetInactivity);
-  window.addEventListener('click', resetInactivity);
-
-  function checkMicStatus() {
-    if (micBtn && micBtn.classList.contains('listening')) {
-      if (micStatusGroup) micStatusGroup.classList.add('active');
-      if (micText) micText.textContent = 'AN';
-    } else {
-      if (micStatusGroup) micStatusGroup.classList.remove('active');
-      if (micText) micText.textContent = 'AUS';
-    }
-  }
-
-  setInterval(updateBerlinTime, 1000);
-  setInterval(updateUptime, 1000);
-  setInterval(checkMicStatus, 200);
-
-  updateBerlinTime();
 })();
