@@ -6,7 +6,7 @@
                   speechEndAt: 0, audioRole: "reply",
                   botEl: null, botText: "", lastPartial: "", partialTimer: null };
 
-  // Deutsch erzwungen
+  // System-Sprache explizit auf Deutsch erzwungen
   const SYSTEM_LANG = "de-DE";
 
   // ---------- turn timing ----------
@@ -21,6 +21,7 @@
     timing.t0 = 0;
   };
 
+  // Helper zum automatischen Scrollen
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
       transcript.scrollTop = transcript.scrollHeight;
@@ -72,6 +73,7 @@
     if ($("autolisten").checked && !state.listening) startListening();
   };
 
+  // Browser TTS fallback auf Deutsch
   const speakBrowser = (text, isAck = false) => {
     if (!text || !window.speechSynthesis) { if (!isAck) onSpeechDone(); return; }
     const u = new SpeechSynthesisUtterance(text); 
@@ -126,13 +128,13 @@
   const cal = { connected: false, source: "none", oauth: false };
   const refreshCalStatus = async () => { try { renderCalStatus(await (await fetch("/api/calendar/status")).json()); } catch (_) {} };
   
-  // Prompt erzwingt Deutsch & Jarvis "Sir"
+  // Prompt erzwingt deutsche Antworten vom Backend
   const sendHello = () => { 
     if (state.ws && state.ws.readyState === 1) {
       state.ws.send(JSON.stringify({ 
         type: "hello", 
         language: "de",
-        prompt_override: "Du bist AXIOM, eine zuvorkommende KI wie JARVIS. Antworte ausschließlich auf Deutsch und sprich den Benutzer IMMER höflich mit 'Sir' an.",
+        prompt_override: "Sprich und antworte ausschließlich auf Deutsch.",
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone 
       })); 
     }
@@ -246,7 +248,7 @@
     beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now);
   };
 
-  // ---------- Spracherkennung Deutsch ----------
+  // ---------- Spracherkennung Deutsch (de-DE) ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   const capture = { stream: null, source: null, node: null };
