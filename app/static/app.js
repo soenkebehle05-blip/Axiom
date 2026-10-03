@@ -34,7 +34,6 @@
     transcript.appendChild(el); transcript.scrollTop = transcript.scrollHeight; return el;
   };
 
-  // Notizen-Verwaltung Logik
   let notes = [];
 
   const loadNotes = async () => {
@@ -154,35 +153,78 @@
 
   const cal = { connected: false, source: "none", oauth: false };
   const calPanel = $("calpanel"), calStatus = $("calstatus");
-  const setInputsEnabled = (on) => { mic.disabled = !on || (state.stt !== "deepgram" && !rec); $("textin").disabled = !on; };
-  const showStatus = (text, cls = "") => { calStatus.textContent = text; calStatus.className = "hint status " + cls; };
+  
+  // IMMER aktiv lassen, damit Axiom antworten kann
+  const setInputsEnabled = () => { 
+    if (mic) mic.disabled = false; 
+    if ($("textin")) $("textin").disabled = false; 
+  };
+  
+  const showStatus = (text, cls = "") => { if (calStatus) { calStatus.textContent = text; calStatus.className = "hint status " + cls; } };
+  
   const openCalPanel = () => {
+    if (!calPanel) return;
     $("calpanel-title").textContent = cal.source === "you" ? "Ihr Google Calendar" : cal.connected ? "Eigenen Google Calendar nutzen" : "Google Calendar verbinden";
-    $("calsignin").textContent = cal.source === "you" ? "Konto wechseln" : "Mit Google anmelden";
-    $("calsignin").hidden = !cal.oauth; $("caldisconnect").hidden = cal.source !== "you"; $("calclose").hidden = !cal.connected;
-    showStatus(cal.oauth ? "" : "Google-Anmeldung nicht konfiguriert; Laden Sie stattdessen ein Token hoch.");
+    if ($("calsignin")) $("calsignin").textContent = cal.source === "you" ? "Konto wechseln" : "Mit Google anmelden";
+    if ($("calsignin")) $("calsignin").hidden = !cal.oauth; 
+    if ($("caldisconnect")) $("caldisconnect").hidden = cal.source !== "you"; 
+    if ($("calclose")) $("calclose").hidden = !cal.connected;
+    showStatus(cal.oauth ? "" : "Token-Datei uploaden oder Google Login nutzen.");
     calPanel.hidden = false;
   };
+
   const renderCalStatus = (s) => {
     cal.connected = !!s.connected; cal.source = s.source; cal.oauth = !!s.oauth_available;
     const who = s.calendar && (s.calendar.summary || s.calendar.id);
     const label = !cal.connected ? "Calendar: Nicht verbunden"
                 : cal.source === "you" ? "Calendar: " + who : "Calendar: " + (who || "Standard");
-    $("calmode").textContent = label; $("calmode").className = "pill clickable " + (cal.connected ? "ok" : "warn");
-    $("calpanel-current").hidden = !cal.connected;
-    if (cal.connected) $("calpanel-current").textContent = "Verbunden als: " + who;
-    setInputsEnabled(true); // Inputs auch ohne Kalender freigeben
+    if ($("calmode")) {
+      $("calmode").textContent = label; 
+      $("calmode").className = "pill clickable " + (cal.connected ? "ok" : "warn");
+    }
+    if ($("calpanel-current")) {
+      $("calpanel-current").hidden = !cal.connected;
+      if (cal.connected) $("calpanel-current").textContent = "Verbunden als: " + who;
+    }
+    setInputsEnabled();
   };
+
   const refreshCalStatus = async () => { try { renderCalStatus(await (await fetch("/api/calendar/status")).json()); } catch (_) {} };
   const sendHello = () => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: "hello", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })); };
   
   if ($("calmode")) $("calmode").addEventListener("click", openCalPanel);
   if ($("calclose")) $("calclose").addEventListener("click", () => { calPanel.hidden = true; });
   if ($("calsignin")) $("calsignin").addEventListener("click", () => { location.href = "/api/calendar/oauth/start"; });
-  if ($("caldisconnect")) $("caldisconnect").addEventListener("click", async () => {
-    try { const res = await fetch("/api/calendar/token", { method: "DELETE" }); const data = await res.json(); renderCalStatus(data); sendHello(); }
-    catch (err) { showStatus("Fehler beim Trennen: " + err.message, "err"); }
-  });
+  
+  // UPLOAD-BUTTON LOGIK FÜR KALENDER-DATEI (TOKEN.JSON)
+  if ($("calfile")) {
+    $("calfile").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const res = await fetch("/api/calendar/token", { method: "POST", body: formData });
+        const data = await res.json();
+        if (res.ok) {
+          renderCalStatus(data);
+          sendHello();
+          if (calPanel) calPanel.hidden = true;
+        } else {
+          showStatus("Upload-Fehler: " + (data.detail || "Ungültige Datei"), "err");
+        }
+      } catch (err) {
+        showStatus("Fehler beim Upload: " + err.message, "err");
+      }
+    });
+  }
+
+  if ($("caldisconnect")) {
+    $("caldisconnect").addEventListener("click", async () => {
+      try { const res = await fetch("/api/calendar/token", { method: "DELETE" }); const data = await res.json(); renderCalStatus(data); sendHello(); }
+      catch (err) { showStatus("Fehler beim Trennen: " + err.message, "err"); }
+    });
+  }
 
   if ($("clearchat")) {
     $("clearchat").addEventListener("click", async () => {
@@ -208,13 +250,13 @@
       clearTimeout(state.idleTimer); clearTimeout(state.partialTimer); clearTimeout(state.watchdog);
       state.listening = false; state.speaking = false;
       stopCapture(); rec?.abort(); stopAudio();
-      mic.classList.remove("listening", "speaking");
-      $("conn").textContent = "getrennt"; $("conn").className = "pill warn";
+      if (mic) mic.classList.remove("listening", "speaking");
+      if ($("conn")) { $("conn").textContent = "getrennt"; $("conn").className = "pill warn"; }
       setTimeout(connect, 1500);
     };
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
-        state.speaking = true; mic.classList.add("speaking");
+        state.speaking = true; if (mic) mic.classList.add("speaking");
         const heardAt = playPCM(ev.data);
         markSound(heardAt); if (state.audioRole === "reply") markReply(heardAt);
         return;
@@ -222,16 +264,16 @@
       const m = JSON.parse(ev.data);
       switch (m.type) {
         case "ready":
-          $("conn").textContent = "verbunden"; $("conn").className = "pill ok";
+          if ($("conn")) { $("conn").textContent = "verbunden"; $("conn").className = "pill ok"; }
           state.sampleRate = m.sample_rate; state.serverTTS = m.tts === "cloud"; state.speculation = !!m.speculation;
           state.stt = m.stt || "browser";
-          mic.disabled = false;
+          if (mic) mic.disabled = false;
           break;
         case "transcript":
           if (!m.final) { interim.textContent = m.text; armIdleTimer(); break; }
           interim.textContent = ""; clearTimeout(state.idleTimer);
           beginTurn(m.text, performance.now() - (m.speech_end_ago_ms || 0), false);
-          if (state.listening) { state.listening = false; mic.classList.remove("listening"); stopCapture(); state.ws.send(JSON.stringify({ type: "listen_stop" })); }
+          if (state.listening) { state.listening = false; if (mic) mic.classList.remove("listening"); stopCapture(); state.ws.send(JSON.stringify({ type: "listen_stop" })); }
           break;
         case "calendar_required": refreshCalStatus(); break;
         case "ack":
@@ -272,7 +314,6 @@
     text = text.trim(); 
     if (!text || !state.ws || state.ws.readyState !== 1) return;
 
-    // PRÜFUNG AUF SUCHBEFEHL (z.B. "suche Hund")
     const searchMatch = text.match(/^suche\s+(.+)/i);
     if (searchMatch) {
       const query = searchMatch[1];
@@ -281,7 +322,7 @@
 
     stopAudio(); 
     if (state.speaking && send) state.ws.send(JSON.stringify({ type: "cancel" }));
-    state.speaking = false; mic.classList.remove("speaking");
+    state.speaking = false; if (mic) mic.classList.remove("speaking");
     
     addMsg("user", text); 
     state.botEl = null; 
@@ -339,7 +380,7 @@
       if (finalText) { interim.textContent = ""; sendText(finalText); return; }
     };
     rec.onspeechend = () => { state.speechEndAt = performance.now(); };
-    rec.onend = () => { state.listening = false; mic.classList.remove("listening"); };
+    rec.onend = () => { state.listening = false; if (mic) mic.classList.remove("listening"); };
   }
   const serverSTT = () => state.stt === "deepgram";
   const LISTEN_IDLE_MS = 8000;
@@ -348,11 +389,11 @@
     if (state.listening || state.startingCapture || state.ws?.readyState !== 1) return;
     if (!serverSTT() && !rec) return;
     state.ws.send(JSON.stringify({ type: "cancel" }));
-    stopAudio(); state.speaking = false; mic.classList.remove("speaking"); ensureCtx();
+    stopAudio(); state.speaking = false; if (mic) mic.classList.remove("speaking"); ensureCtx();
     state.startingCapture = true;
     try {
       if (serverSTT()) await startCapture(); else rec.start();
-      state.listening = true; mic.classList.add("listening");
+      state.listening = true; if (mic) mic.classList.add("listening");
       if (serverSTT()) armIdleTimer();
     } catch (err) { addMsg("error", "Mikrofon: " + (err.message || err)); stopCapture(); }
     finally { state.startingCapture = false; }
@@ -360,17 +401,20 @@
   const stopListening = () => {
     if (!state.listening) return;
     clearTimeout(state.idleTimer);
-    if (serverSTT()) { state.listening = false; mic.classList.remove("listening"); stopCapture(); if (state.ws?.readyState === 1) state.ws.send(JSON.stringify({ type: "listen_stop" })); }
+    if (serverSTT()) { state.listening = false; if (mic) mic.classList.remove("listening"); stopCapture(); if (state.ws?.readyState === 1) state.ws.send(JSON.stringify({ type: "listen_stop" })); }
     else rec.stop();
   };
-  mic.addEventListener("click", () => (state.listening ? stopListening() : startListening()));
+  if (mic) mic.addEventListener("click", () => (state.listening ? stopListening() : startListening()));
 
-  $("textform").addEventListener("submit", (e) => { 
-    e.preventDefault(); 
-    sendText($("textin").value); 
-    $("textin").value = ""; 
-  });
+  if ($("textform")) {
+    $("textform").addEventListener("submit", (e) => { 
+      e.preventDefault(); 
+      sendText($("textin").value); 
+      $("textin").value = ""; 
+    });
+  }
   
+  setInputsEnabled();
   refreshCalStatus();
   loadNotes();
   connect();
