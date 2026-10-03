@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -30,12 +30,10 @@ log = logging.getLogger("scheduler")
 STATIC = Path(__file__).parent / "static"
 MAX_SESSIONS = 200
 
-# Speichermedien für Langzeitgedächtnis, Chat-Verlauf und Notizen
 MEMORY_FILE = Path(__file__).parent / "memory.json"
 CHAT_FILE = Path(__file__).parent / "chat_history.json"
 NOTES_FILE = Path(__file__).parent / "notes.json"
 
-# System-Prompt für Axiom
 AXIOM_SYSTEM_PROMPT = """
 Du bist Axiom, der hochintelligente, treue und zuvorkommende KI-Assistent.
 - Sprich den Nutzer ausnahmslos mit "Sir" an.
@@ -91,12 +89,6 @@ class Runtime:
         self.user_calendars: dict[str, tuple[GoogleCalendar, dict]] = {}
         self.ack_audio: dict[str, bytes] = {}
         self._background: set[asyncio.Task[None]] = set()
-        log.info(
-            "calendar=%s tts=%s model=%s",
-            self.calendar_source,
-            self.tts.name if self.tts else "browser",
-            self.llm.model,
-        )
 
     def calendar_for(self, uid: str | None) -> tuple[GoogleCalendar | None, str, dict]:
         if uid and uid in self.user_calendars:
@@ -145,7 +137,6 @@ class Runtime:
             inner = data.get("web") or data.get("installed") or data
             return {"client_id": inner["client_id"], "client_secret": inner["client_secret"]}
         except (ValueError, KeyError, AttributeError):
-            log.warning("GOOGLE_OAUTH_CLIENT_JSON / %s is not a Google OAuth client JSON", path)
             return None
 
     def _drop_sessions_for(self, uid: str) -> None:
@@ -161,6 +152,7 @@ class Runtime:
 
     def new_agent(self, tz_name: str | None, uid: str | None = None) -> Agent:
         calendar, _, _ = self.calendar_for(uid)
+        # WICHTIGE KORREKTUR: Kein Fehler mehr werfen, wenn Kalender fehlt, damit der Agent antworten kann!
         try:
             tz = ZoneInfo(tz_name or self.settings.default_timezone)
         except ZoneInfoNotFoundError:
@@ -211,9 +203,8 @@ class Runtime:
         try:
             clips = await asyncio.gather(*(self.tts.synthesize(p) for p in ACK_PHRASES))
             self.ack_audio = dict(zip(ACK_PHRASES, clips, strict=False))
-            log.info("cached %d acknowledgement clips", len(self.ack_audio))
         except Exception as exc:
-            log.warning("could not pre-synthesise acknowledgements (%s); the browser will speak them", exc)
+            log.warning("could not pre-synthesise acknowledgements (%s)", exc)
 
 
 @asynccontextmanager
