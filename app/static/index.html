@@ -7,60 +7,75 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <main class="app">
-    <header>
-      <div>
-        <h1>Smart Scheduler</h1>
-        <p class="sub">Axiom - Ihr intelligenter persönlicher Assistent</p>
-      </div>
-      <div class="status" id="status">
-        <span class="pill" id="conn">connecting…</span>
-        <button class="pill clickable" id="calmode" title="Connect or replace the Google Calendar token">Calendar: checking…</button>
-        <button class="pill clickable danger" id="clearchat" title="Chatverlauf vollständig löschen">Chat löschen</button>
-        <span class="pill" id="ttsmode"></span>
-      </div>
-    </header>
-
-    <div class="overlay" id="calpanel" hidden>
-      <div class="panel">
-        <h2 id="calpanel-title">Connect Google Calendar</h2>
-        <p class="hint">The agent reads and books events on a real Google Calendar.</p>
-        <p class="hint" id="calpanel-current" hidden></p>
-        <div class="row">
-          <button type="button" id="calsignin">Sign in with Google</button>
-          <button type="button" id="caldisconnect" class="secondary" hidden>Disconnect</button>
-          <button type="button" id="calclose" class="secondary">Close</button>
+  <main class="app-layout">
+    <div class="main-content">
+      <header>
+        <div>
+          <h1>Smart Scheduler</h1>
+          <p class="sub">Axiom - Ihr intelligenter persönlicher Assistent</p>
         </div>
-        <details class="advanced">
-          <summary class="hint">Advanced: upload token.json</summary>
-          <p class="hint">Choose your <code>token.json</code> file:</p>
-          <form id="calform">
-            <input type="file" id="calfile" accept=".json,application/json" required />
-            <div class="row"><button type="submit" id="calsubmit">Upload token</button></div>
-          </form>
-        </details>
-        <p class="hint status" id="calstatus"></p>
+        <div class="status" id="status">
+          <span class="pill" id="conn">connecting…</span>
+          <button class="pill clickable" id="calmode" title="Connect or replace the Google Calendar token">Calendar: checking…</button>
+          <button class="pill clickable danger" id="clearchat" title="Chatverlauf vollständig löschen">Chat löschen</button>
+          <span class="pill" id="ttsmode"></span>
+        </div>
+      </header>
+
+      <div class="overlay" id="calpanel" hidden>
+        <div class="panel">
+          <h2 id="calpanel-title">Connect Google Calendar</h2>
+          <p class="hint">The agent reads and books events on a real Google Calendar.</p>
+          <p class="hint" id="calpanel-current" hidden></p>
+          <div class="row">
+            <button type="button" id="calsignin">Sign in with Google</button>
+            <button type="button" id="caldisconnect" class="secondary" hidden>Disconnect</button>
+            <button type="button" id="calclose" class="secondary">Close</button>
+          </div>
+          <details class="advanced">
+            <summary class="hint">Advanced: upload token.json</summary>
+            <p class="hint">Choose your <code>token.json</code> file:</p>
+            <form id="calform">
+              <input type="file" id="calfile" accept=".json,application/json" required />
+              <div class="row"><button type="submit" id="calsubmit">Upload token</button></div>
+            </form>
+          </details>
+          <p class="hint status" id="calstatus"></p>
+        </div>
       </div>
+
+      <section class="hud">
+        <label class="toggle"><input type="checkbox" id="autolisten" checked /> Nach Antwort automatisch zuhören</label>
+      </section>
+
+      <section class="transcript" id="transcript">
+        <div class="msg bot">Guten Tag, Sir. Ich bin Axiom. Wie kann ich Ihnen heute zu Diensten sein?</div>
+      </section>
+
+      <footer>
+        <button id="mic" class="mic" title="Click to speak (or hold Space)">
+          <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
+        </button>
+        <div class="interim" id="interim"></div>
+        <form id="textform" autocomplete="off">
+          <input id="textin" placeholder="…oder schreiben Sie hier Ihre Nachricht, Sir" />
+        </form>
+      </footer>
     </div>
 
-    <section class="hud">
-      <label class="toggle"><input type="checkbox" id="autolisten" checked /> Nach Antwort automatisch zuhören</label>
-    </section>
-
-    <section class="transcript" id="transcript">
-      <div class="msg bot">Guten Tag, Sir. Ich bin Axiom. Wie kann ich Ihnen heute zu Diensten sein?</div>
-    </section>
-
-    <footer>
-      <button id="mic" class="mic" title="Click to speak (or hold Space)">
-        <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
-      </button>
-      <div class="interim" id="interim"></div>
-      <form id="textform" autocomplete="off">
-        <input id="textin" placeholder="…oder schreiben Sie hier Ihre Nachricht, Sir" />
-      </form>
-    </footer>
+    <!-- Notizen-Sidebar auf der rechten Seite -->
+    <aside class="notes-sidebar">
+      <div class="notes-header">
+        <h2>Notizen</h2>
+        <button id="add-note-btn" class="add-btn" title="Neue Notiz hinzufügen">+</button>
+      </div>
+      <div class="notes-input-container" id="notes-input-container" hidden>
+        <input type="text" id="new-note-input" placeholder="Notiz eingeben..." />
+      </div>
+      <ul id="notes-list" class="notes-list"></ul>
+    </aside>
   </main>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
