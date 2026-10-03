@@ -35,13 +35,14 @@ MEMORY_FILE = Path(__file__).parent / "memory.json"
 CHAT_FILE = Path(__file__).parent / "chat_history.json"
 NOTES_FILE = Path(__file__).parent / "notes.json"
 
-# System-Prompt für die KI-Persönlichkeit Axiom mit Notizen-Logik
+# System-Prompt für Axiom: Notizen STRENG aus der internen Liste abrufen
 AXIOM_SYSTEM_PROMPT = """
 Du bist Axiom, der hochintelligente, treue und zuvorkommende KI-Assistent.
 - Sprich den Nutzer ausnahmslos mit "Sir" an.
 - Dein Tonfall ist stets höflich, präzise, leicht britisch-distanziert und professionell.
-- WICHTIG (Langzeitgedächtnis & Notizen): Wenn der Nutzer nach seinen Notizen oder Aufgaben fragt, lies ihm seine gespeicherten Notizen vor.
-- PRIORISIERUNG: Lies ZUERST die Notizen vor, die eine Priorität (ein Sternchen) haben, und erwähne kurz, dass diese priorisiert sind. Lies DANACH die restlichen Notizen vor. Lass keine Notizen aus, es sei denn, der Nutzer fragt explizit nur nach den wichtigen.
+- WICHTIG (NOTIZEN & PRIORITÄTEN): Wenn der Nutzer nach seinen Notizen, To-Dos oder Prioritäten fragt, greife NIEMALS auf den Google Calendar zu. Nutze AUSSCHLIESSLICH die unten bereitgestellte interne Notizenliste.
+- Lies ZUERST die Notizen vor, die eine Priorität (ein Sternchen) haben. Lies DANACH die restlichen Notizen vor.
+- ALLGEMEINES WISSEN: Beantworte Wissensfragen (z.B. Wer ist Bundeskanzler, Fragen zu Fakten, etc.) direkt, präzise und hilfsbereit.
 """
 
 
@@ -73,7 +74,7 @@ class Runtime:
             )
             if self.calendar is not None:
                 self.calendar_source = "env" if settings.calendar_creds_json.strip() else "file"
-                self.calendar.holiday_calendar_id = self.holiday_calendar(settings.default_timezone)
+                self.calendar.holiday_calendar_id = self.holiday_calendar(settings.defaulttimezone)
         except Exception as exc:
             log.warning("Stored calendar token is unusable (%s); connect one from the UI", exc)
         if self.calendar is None:
@@ -177,19 +178,17 @@ class Runtime:
             
             memories = load_json_file(MEMORY_FILE).get(uid, [])
             if memories:
-                session.user_memories = memories
+                session.user_memories = list(memories)
                 
-            # Notizen in das Gedächtnis des Agenten übertragen
+            # Interne Notizen explizit als Notizen-Kontext übergeben
             user_notes = load_json_file(NOTES_FILE).get(uid, [])
-            if user_notes:
-                starred = [n["text"] for n in user_notes if n.get("starred")]
-                regular = [n["text"] for n in user_notes if not n.get("starred")]
-                note_context = "Aktuelle Notizen des Nutzers:\n"
-                if starred:
-                    note_context += "- Priorisiert (mit Stern): " + ", ".join(starred) + "\n"
-                if regular:
-                    note_context += "- Weitere Notizen: " + ", ".join(regular) + "\n"
-                session.user_memories.append(note_context)
+            starred = [n["text"] for n in user_notes if n.get("starred")]
+            regular = [n["text"] for n in user_notes if not n.get("starred")]
+            
+            note_context = "[INTERNE NOTIZENLISTE - VERWENDE NUR DIESE FÜR NOTIZ-ANFRAGEN, NICHT DEN KALENDER]:\n"
+            note_context += "- Priorisiert (Stern): " + (", ".join(starred) if starred else "Keine") + "\n"
+            note_context += "- Weitere Notizen: " + (", ".join(regular) if regular else "Keine") + "\n"
+            session.user_memories.append(note_context)
 
         agent = Agent(self.llm, calendar, session, s.work_day_start, s.work_day_end, s.slot_step_minutes)
         agent.owner = uid
@@ -254,7 +253,6 @@ async def clear_chat(request: Request):
     return {"ok": True, "message": "Der Chatverlauf wurde gelöscht, Sir."}
 
 
-# API Endpunkte für Notizen
 @app.get("/api/notes")
 async def get_notes(request: Request):
     uid = request.cookies.get(UID_COOKIE) or "default"
@@ -270,7 +268,6 @@ async def save_notes(request: Request):
     notes_data[uid] = body.get("notes", [])
     save_json_file(NOTES_FILE, notes_data)
     
-    # Session aktualisieren
     rt: Runtime = app.state.rt
     rt._drop_sessions_for(uid)
     return {"ok": True}
