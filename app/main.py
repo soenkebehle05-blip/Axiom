@@ -30,17 +30,17 @@ log = logging.getLogger("scheduler")
 STATIC = Path(__file__).parent / "static"
 MAX_SESSIONS = 200
 
-# Dateipfade für dauerhaftes Gedächtnis und Chat-Verläufe auf dem Server
+# Speichermedien für Langzeitgedächtnis und Chat-Verlauf
 MEMORY_FILE = Path(__file__).parent / "memory.json"
 CHAT_FILE = Path(__file__).parent / "chat_history.json"
 
-# System-Prompt für die KI-Persönlichkeit Axiom
+# System-Prompt für Axiom
 AXIOM_SYSTEM_PROMPT = """
 Du bist Axiom, der hochintelligente, treue und zuvorkommende KI-Assistent.
 - Sprich den Nutzer ausnahmslos mit "Sir" an.
-- Dein Tonfall ist stets höflich, präzise, leicht britisch-distanziert und hochgradig professionell (wie Jarvis von Iron Man).
-- WICHTIG (Langzeitgedächtnis): Wenn der Nutzer persönliche Vorlieben, Wünsche, Ausrüstungsgegenstände oder Fakten nennt (z. B. "ich liebe Marmelade", "für meinen Triathlon brauche ich X", "merk dir Y"), merkst du dir diese Informationen dauerhaft auf dem Server.
-- Wenn der Nutzer dich nach seinen gespeicherten Sachen oder Vorbereitungen fragt (z. B. "Ich habe heute einen Triathlon, frag mich ab / sag mir was ich brauche"), rufst du diese Fakten aus deinem Gedächtnis ab und zählst sie ihm präzise auf.
+- Dein Tonfall ist stets höflich, präzise, leicht britisch-distanziert und hochgradig professionell.
+- WICHTIG (Langzeitgedächtnis): Wenn der Nutzer persönliche Vorlieben, Wünsche, Ausrüstungsgegenstände oder Fakten nennt (z. B. "ich liebe Marmelade", "für meinen Triathlon brauche ich X", "merk dir Y"), merkst du dir diese Informationen dauerhaft.
+- Wenn der Nutzer dich nach seinen gespeicherten Sachen fragt, rufst du diese Fakten aus deinem Gedächtnis ab und zählst sie ihm auf.
 """
 
 
@@ -167,8 +167,6 @@ class Runtime:
             tz = ZoneInfo(self.settings.default_timezone)
         s = self.settings
         session = Session(tz=tz)
-        
-        # Den System-Prompt von Axiom direkt der Session/Agent mitgeben
         session.system_prompt = AXIOM_SYSTEM_PROMPT
         
         if uid:
@@ -176,7 +174,6 @@ class Runtime:
             session.preferences = dict(store)
             session.preference_store = store
             
-            # Gedächtnisdaten aus der Datei in die Session laden
             memories = load_json_file(MEMORY_FILE).get(uid, [])
             if memories:
                 session.user_memories = memories
@@ -234,7 +231,6 @@ async def index(request: Request):
 
 @app.delete("/api/chat/clear")
 async def clear_chat(request: Request):
-    """Löscht den Chat-Verlauf des Benutzers serverseitig."""
     uid = request.cookies.get(UID_COOKIE)
     rt: Runtime = app.state.rt
     if uid:
@@ -242,7 +238,7 @@ async def clear_chat(request: Request):
         chats.pop(uid, None)
         save_json_file(CHAT_FILE, chats)
         rt._drop_sessions_for(uid)
-    return {"ok": True, "message": "Der Chatverlauf wurde erfolgreich gelöscht, Sir."}
+    return {"ok": True, "message": "Der Chatverlauf wurde gelöscht, Sir."}
 
 
 @app.get("/health")
