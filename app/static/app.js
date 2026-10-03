@@ -55,9 +55,9 @@
 
   const renderNotes = () => {
     const list = $("notes-list");
+    if (!list) return;
     list.innerHTML = "";
     
-    // Sortieren: Sterne zuerst
     const sortedNotes = [...notes].sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
 
     sortedNotes.forEach((note) => {
@@ -69,7 +69,6 @@
       checkbox.type = "checkbox";
       checkbox.className = "note-checkbox";
       checkbox.addEventListener("change", () => {
-        // Bei Klick abchecken und automatisch löschen
         notes.splice(originalIndex, 1);
         saveNotes();
       });
@@ -92,23 +91,27 @@
     });
   };
 
-  $("add-note-btn").addEventListener("click", () => {
-    const container = $("notes-input-container");
-    const input = $("new-note-input");
-    container.hidden = !container.hidden;
-    if (!container.hidden) {
-      input.focus();
-    }
-  });
+  if ($("add-note-btn")) {
+    $("add-note-btn").addEventListener("click", () => {
+      const container = $("notes-input-container");
+      const input = $("new-note-input");
+      container.hidden = !container.hidden;
+      if (!container.hidden) {
+        input.focus();
+      }
+    });
+  }
 
-  $("new-note-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.value.trim() !== "") {
-      notes.push({ text: e.target.value.trim(), starred: false });
-      e.target.value = "";
-      $("notes-input-container").hidden = true;
-      saveNotes();
-    }
-  });
+  if ($("new-note-input")) {
+    $("new-note-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.value.trim() !== "") {
+        notes.push({ text: e.target.value.trim(), starred: false });
+        e.target.value = "";
+        $("notes-input-container").hidden = true;
+        saveNotes();
+      }
+    });
+  }
 
   let ctx = null, nextTime = 0, sources = [];
   const ensureCtx = () => { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: state.sampleRate }); if (ctx.state === "suspended") ctx.resume(); return ctx; };
@@ -253,6 +256,14 @@
 
   const beginTurn = (text, sentAt, send = true) => {
     text = text.trim(); if (!text || !state.ws || state.ws.readyState !== 1) return;
+
+    // PRÜFUNG AUF SUCHBEFEHL (z.B. "suche Hund")
+    const searchMatch = text.match(/^suche\s+(.+)/i);
+    if (searchMatch) {
+      const query = searchMatch[1];
+      window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+    }
+
     stopAudio(); if (state.speaking && send) state.ws.send(JSON.stringify({ type: "cancel" }));
     state.speaking = false; mic.classList.remove("speaking");
     addMsg("user", text); state.botEl = null; state.botText = ""; state.audioRole = "reply"; state.lastPartial = ""; clearTimeout(state.partialTimer);
@@ -263,6 +274,7 @@
     }, 20000);
     ensureCtx(); if (send) state.ws.send(JSON.stringify({ type: "user_text", text }));
   };
+
   const sendText = (text) => {
     const now = performance.now();
     beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now);
