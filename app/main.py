@@ -30,17 +30,18 @@ log = logging.getLogger("scheduler")
 STATIC = Path(__file__).parent / "static"
 MAX_SESSIONS = 200
 
-# Speichermedien für Langzeitgedächtnis und Chat-Verlauf auf dem Server
+# Speichermedien für Langzeitgedächtnis, Chat-Verlauf und Notizen
 MEMORY_FILE = Path(__file__).parent / "memory.json"
 CHAT_FILE = Path(__file__).parent / "chat_history.json"
+NOTES_FILE = Path(__file__).parent / "notes.json"
 
-# System-Prompt für die KI-Persönlichkeit Axiom
+# System-Prompt für die KI-Persönlichkeit Axiom mit Notizen-Logik
 AXIOM_SYSTEM_PROMPT = """
 Du bist Axiom, der hochintelligente, treue und zuvorkommende KI-Assistent.
 - Sprich den Nutzer ausnahmslos mit "Sir" an.
 - Dein Tonfall ist stets höflich, präzise, leicht britisch-distanziert und professionell.
-- WICHTIG (Langzeitgedächtnis): Wenn der Nutzer persönliche Vorlieben, Wünsche, Ausrüstungsgegenstände oder Fakten nennt (z. B. "ich liebe Marmelade", "für meinen Triathlon brauche ich X", "merk dir Y"), merkst du dir diese Informationen dauerhaft auf dem Server.
-- Wenn der Nutzer dich nach seinen gespeicherten Sachen oder Vorbereitungen fragt (z. B. "Ich habe heute einen Triathlon, frag mich ab / sag mir was ich brauche"), rufst du diese Fakten aus deinem Gedächtnis ab und zählst sie ihm auf.
+- WICHTIG (Langzeitgedächtnis & Notizen): Wenn der Nutzer nach seinen Notizen oder Aufgaben fragt, lies ihm seine gespeicherten Notizen vor.
+- PRIORISIERUNG: Lies ZUERST die Notizen vor, die eine Priorität (ein Sternchen) haben, und erwähne kurz, dass diese priorisiert sind. Lies DANACH die restlichen Notizen vor. Lass keine Notizen aus, es sei denn, der Nutzer fragt explizit nur nach den wichtigen.
 """
 
 
@@ -177,6 +178,18 @@ class Runtime:
             memories = load_json_file(MEMORY_FILE).get(uid, [])
             if memories:
                 session.user_memories = memories
+                
+            # Notizen in das Gedächtnis des Agenten übertragen
+            user_notes = load_json_file(NOTES_FILE).get(uid, [])
+            if user_notes:
+                starred = [n["text"] for n in user_notes if n.get("starred")]
+                regular = [n["text"] for n in user_notes if not n.get("starred")]
+                note_context = "Aktuelle Notizen des Nutzers:\n"
+                if starred:
+                    note_context += "- Priorisiert (mit Stern): " + ", ".join(starred) + "\n"
+                if regular:
+                    note_context += "- Weitere Notizen: " + ", ".join(regular) + "\n"
+                session.user_memories.append(note_context)
 
         agent = Agent(self.llm, calendar, session, s.work_day_start, s.work_day_end, s.slot_step_minutes)
         agent.owner = uid
@@ -239,6 +252,28 @@ async def clear_chat(request: Request):
         save_json_file(CHAT_FILE, chats)
         rt._drop_sessions_for(uid)
     return {"ok": True, "message": "Der Chatverlauf wurde gelöscht, Sir."}
+
+
+# API Endpunkte für Notizen
+@app.get("/api/notes")
+async def get_notes(request: Request):
+    uid = request.cookies.get(UID_COOKIE) or "default"
+    notes = load_json_file(NOTES_FILE).get(uid, [])
+    return {"notes": notes}
+
+
+@app.post("/api/notes")
+async def save_notes(request: Request):
+    uid = request.cookies.get(UID_COOKIE) or "default"
+    body = await request.json()
+    notes_data = load_json_file(NOTES_FILE)
+    notes_data[uid] = body.get("notes", [])
+    save_json_file(NOTES_FILE, notes_data)
+    
+    # Session aktualisieren
+    rt: Runtime = app.state.rt
+    rt._drop_sessions_for(uid)
+    return {"ok": True}
 
 
 @app.get("/health")
