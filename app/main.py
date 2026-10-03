@@ -35,14 +35,14 @@ MEMORY_FILE = Path(__file__).parent / "memory.json"
 CHAT_FILE = Path(__file__).parent / "chat_history.json"
 NOTES_FILE = Path(__file__).parent / "notes.json"
 
-# System-Prompt für Axiom: Notizen STRENG aus der internen Liste abrufen
+# System-Prompt für Axiom
 AXIOM_SYSTEM_PROMPT = """
 Du bist Axiom, der hochintelligente, treue und zuvorkommende KI-Assistent.
 - Sprich den Nutzer ausnahmslos mit "Sir" an.
 - Dein Tonfall ist stets höflich, präzise, leicht britisch-distanziert und professionell.
 - WICHTIG (NOTIZEN & PRIORITÄTEN): Wenn der Nutzer nach seinen Notizen, To-Dos oder Prioritäten fragt, greife NIEMALS auf den Google Calendar zu. Nutze AUSSCHLIESSLICH die unten bereitgestellte interne Notizenliste.
 - Lies ZUERST die Notizen vor, die eine Priorität (ein Sternchen) haben. Lies DANACH die restlichen Notizen vor.
-- ALLGEMEINES WISSEN: Beantworte Wissensfragen (z.B. Wer ist Bundeskanzler, Fragen zu Fakten, etc.) direkt, präzise und hilfsbereit.
+- ALLGEMEINES WISSEN & SMALLTALK: Beantworte alle Fragen, Begrüßungen (wie "Hallo") und allgemeine Wissensfragen direkt, präzise und zuvorkommend.
 """
 
 
@@ -74,7 +74,7 @@ class Runtime:
             )
             if self.calendar is not None:
                 self.calendar_source = "env" if settings.calendar_creds_json.strip() else "file"
-                self.calendar.holiday_calendar_id = self.holiday_calendar(settings.defaulttimezone)
+                self.calendar.holiday_calendar_id = self.holiday_calendar(settings.default_timezone)
         except Exception as exc:
             log.warning("Stored calendar token is unusable (%s); connect one from the UI", exc)
         if self.calendar is None:
@@ -161,8 +161,6 @@ class Runtime:
 
     def new_agent(self, tz_name: str | None, uid: str | None = None) -> Agent:
         calendar, _, _ = self.calendar_for(uid)
-        if calendar is None:
-            raise HTTPException(409, "calendar_not_connected")
         try:
             tz = ZoneInfo(tz_name or self.settings.default_timezone)
         except ZoneInfoNotFoundError:
@@ -180,7 +178,6 @@ class Runtime:
             if memories:
                 session.user_memories = list(memories)
                 
-            # Interne Notizen explizit als Notizen-Kontext übergeben
             user_notes = load_json_file(NOTES_FILE).get(uid, [])
             starred = [n["text"] for n in user_notes if n.get("starred")]
             regular = [n["text"] for n in user_notes if not n.get("starred")]
