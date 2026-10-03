@@ -16,7 +16,15 @@
     timing.t0 = 0;
   };
 
-  const addMsg = (cls, text) => { const el = document.createElement("div"); el.className = "msg " + cls; el.textContent = text; transcript.appendChild(el); transcript.scrollTop = transcript.scrollHeight; return el; };
+  const addMsg = (cls, text) => { 
+    const el = document.createElement("div"); 
+    el.className = "msg " + cls; 
+    el.textContent = text; 
+    transcript.appendChild(el); 
+    transcript.scrollTop = transcript.scrollHeight; 
+    return el; 
+  };
+  
   const addTool = (name, args) => {
     const el = document.createElement("details"); el.className = "tool";
     const summary = document.createElement("summary"), details = document.createElement("pre");
@@ -133,7 +141,7 @@
     if (state.turnFinished) return;
     state.turnFinished = true; logTurnTiming();
     if (state.listenAfter === false) { stopListening(); return; }
-    if ($("autolisten").checked && !state.listening) startListening();
+    if ($("autolisten")?.checked && !state.listening) startListening();
   };
 
   const speakBrowser = (text, isAck = false) => {
@@ -163,33 +171,34 @@
     $("calmode").textContent = label; $("calmode").className = "pill clickable " + (cal.connected ? "ok" : "warn");
     $("calpanel-current").hidden = !cal.connected;
     if (cal.connected) $("calpanel-current").textContent = "Verbunden als: " + who;
-    setInputsEnabled(cal.connected);
-    if (!cal.connected) openCalPanel();
+    setInputsEnabled(true); // Inputs auch ohne Kalender freigeben
   };
   const refreshCalStatus = async () => { try { renderCalStatus(await (await fetch("/api/calendar/status")).json()); } catch (_) {} };
   const sendHello = () => { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: "hello", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })); };
   
-  $("calmode").addEventListener("click", openCalPanel);
-  $("calclose").addEventListener("click", () => { calPanel.hidden = true; });
-  $("calsignin").addEventListener("click", () => { location.href = "/api/calendar/oauth/start"; });
-  $("caldisconnect").addEventListener("click", async () => {
+  if ($("calmode")) $("calmode").addEventListener("click", openCalPanel);
+  if ($("calclose")) $("calclose").addEventListener("click", () => { calPanel.hidden = true; });
+  if ($("calsignin")) $("calsignin").addEventListener("click", () => { location.href = "/api/calendar/oauth/start"; });
+  if ($("caldisconnect")) $("caldisconnect").addEventListener("click", async () => {
     try { const res = await fetch("/api/calendar/token", { method: "DELETE" }); const data = await res.json(); renderCalStatus(data); sendHello(); }
     catch (err) { showStatus("Fehler beim Trennen: " + err.message, "err"); }
   });
 
-  $("clearchat").addEventListener("click", async () => {
-    if (!confirm("Möchten Sie den gesamten Chatverlauf wirklich löschen, Sir?")) return;
-    try {
-      const res = await fetch("/api/chat/clear", { method: "DELETE" });
-      if (res.ok) {
-        transcript.innerHTML = '<div class="msg bot">Sehr wohl, Sir. Der Chatverlauf wurde vollständig gelöscht. Wie kann ich Ihnen zu Diensten sein?</div>';
-      } else {
-        addMsg("error", "Fehler beim Löschen des Chatverlaufs.");
+  if ($("clearchat")) {
+    $("clearchat").addEventListener("click", async () => {
+      if (!confirm("Möchten Sie den gesamten Chatverlauf wirklich löschen, Sir?")) return;
+      try {
+        const res = await fetch("/api/chat/clear", { method: "DELETE" });
+        if (res.ok) {
+          transcript.innerHTML = '<div class="msg bot">Sehr wohl, Sir. Der Chatverlauf wurde vollständig gelöscht. Wie kann ich Ihnen zu Diensten sein?</div>';
+        } else {
+          addMsg("error", "Fehler beim Löschen des Chatverlaufs.");
+        }
+      } catch (err) {
+        addMsg("error", "Verbindungsfehler: " + err.message);
       }
-    } catch (err) {
-      addMsg("error", "Verbindungsfehler: " + err.message);
-    }
-  });
+    });
+  }
 
   const connect = () => {
     const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
@@ -232,7 +241,11 @@
         case "reply_audio_start": state.audioRole = "reply"; break;
         case "token":
           clearTimeout(state.watchdog);
-          if (!state.botEl) state.botEl = addMsg("bot", ""); state.botText += m.text; state.botEl.textContent = state.botText; transcript.scrollTop = transcript.scrollHeight; break;
+          if (!state.botEl) state.botEl = addMsg("bot", ""); 
+          state.botText += m.text; 
+          state.botEl.textContent = state.botText; 
+          transcript.scrollTop = transcript.scrollHeight; 
+          break;
         case "tool_call": timing.tool = true; addTool(m.name, m.args); break;
         case "tool_result": { const last = transcript.querySelector("details.tool:last-of-type"); if (last) last.querySelector("pre").textContent += "\n→ " + JSON.stringify(m.result, null, 1); break; }
         case "turn_end":
@@ -240,7 +253,8 @@
           state.listenAfter = m.listen_after !== false;
           if (!state.listenAfter && state.listening) stopListening();
           if (state.botEl) state.botEl.textContent = m.text || state.botText;
-          if (!state.serverTTS) { state.speaking = true; speakBrowser(m.text); } break;
+          if (!state.serverTTS) { state.speaking = true; speakBrowser(m.text); } 
+          break;
         case "audio_end":
           state.audioDone = true;
           if (state.serverTTS && !sources.length) onSpeechDone();
@@ -255,7 +269,8 @@
   };
 
   const beginTurn = (text, sentAt, send = true) => {
-    text = text.trim(); if (!text || !state.ws || state.ws.readyState !== 1) return;
+    text = text.trim(); 
+    if (!text || !state.ws || state.ws.readyState !== 1) return;
 
     // PRÜFUNG AUF SUCHBEFEHL (z.B. "suche Hund")
     const searchMatch = text.match(/^suche\s+(.+)/i);
@@ -264,20 +279,36 @@
       window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
     }
 
-    stopAudio(); if (state.speaking && send) state.ws.send(JSON.stringify({ type: "cancel" }));
+    stopAudio(); 
+    if (state.speaking && send) state.ws.send(JSON.stringify({ type: "cancel" }));
     state.speaking = false; mic.classList.remove("speaking");
-    addMsg("user", text); state.botEl = null; state.botText = ""; state.audioRole = "reply"; state.lastPartial = ""; clearTimeout(state.partialTimer);
-    resetTiming(sentAt); state.speechEndAt = 0; state.turnFinished = false; state.listenAfter = true; state.audioDone = false;
+    
+    addMsg("user", text); 
+    state.botEl = null; 
+    state.botText = ""; 
+    state.audioRole = "reply"; 
+    state.lastPartial = ""; 
+    clearTimeout(state.partialTimer);
+    resetTiming(sentAt); 
+    state.speechEndAt = 0; 
+    state.turnFinished = false; 
+    state.listenAfter = true; 
+    state.audioDone = false;
+    
     clearTimeout(state.watchdog);
     state.watchdog = setTimeout(() => {
       if (!state.botText) addMsg("error", "Die Antwort dauert länger als erwartet.");
     }, 20000);
-    ensureCtx(); if (send) state.ws.send(JSON.stringify({ type: "user_text", text }));
+    
+    ensureCtx(); 
+    if (send) {
+      state.ws.send(JSON.stringify({ type: "user_text", text }));
+    }
   };
 
   const sendText = (text) => {
     const now = performance.now();
-    beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now);
+    beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now, true);
   };
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -334,7 +365,12 @@
   };
   mic.addEventListener("click", () => (state.listening ? stopListening() : startListening()));
 
-  $("textform").addEventListener("submit", (e) => { e.preventDefault(); sendText($("textin").value); $("textin").value = ""; });
+  $("textform").addEventListener("submit", (e) => { 
+    e.preventDefault(); 
+    sendText($("textin").value); 
+    $("textin").value = ""; 
+  });
+  
   refreshCalStatus();
   loadNotes();
   connect();
