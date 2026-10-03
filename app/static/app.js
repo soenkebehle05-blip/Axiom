@@ -26,6 +26,90 @@
     transcript.appendChild(el); transcript.scrollTop = transcript.scrollHeight; return el;
   };
 
+  // Notizen-Verwaltung Logik
+  let notes = [];
+
+  const loadNotes = async () => {
+    try {
+      const res = await fetch("/api/notes");
+      const data = await res.json();
+      notes = data.notes || [];
+      renderNotes();
+    } catch (err) {
+      console.error("Fehler beim Laden der Notizen:", err);
+    }
+  };
+
+  const saveNotes = async () => {
+    renderNotes();
+    try {
+      await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes })
+      });
+    } catch (err) {
+      console.error("Fehler beim Speichern der Notizen:", err);
+    }
+  };
+
+  const renderNotes = () => {
+    const list = $("notes-list");
+    list.innerHTML = "";
+    
+    // Sortieren: Sterne zuerst
+    const sortedNotes = [...notes].sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+
+    sortedNotes.forEach((note) => {
+      const originalIndex = notes.indexOf(note);
+      const li = document.createElement("li");
+      li.className = "note-item";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "note-checkbox";
+      checkbox.addEventListener("change", () => {
+        // Bei Klick abchecken und automatisch löschen
+        notes.splice(originalIndex, 1);
+        saveNotes();
+      });
+
+      const textSpan = document.createElement("span");
+      textSpan.className = "note-text";
+      textSpan.textContent = note.text;
+
+      const star = document.createElement("span");
+      star.className = "note-star" + (note.starred ? " active" : "");
+      star.innerHTML = "★";
+      star.title = "Priorisieren";
+      star.addEventListener("click", () => {
+        notes[originalIndex].starred = !notes[originalIndex].starred;
+        saveNotes();
+      });
+
+      li.append(checkbox, textSpan, star);
+      list.appendChild(li);
+    });
+  };
+
+  $("add-note-btn").addEventListener("click", () => {
+    const container = $("notes-input-container");
+    const input = $("new-note-input");
+    container.hidden = !container.hidden;
+    if (!container.hidden) {
+      input.focus();
+    }
+  });
+
+  $("new-note-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.value.trim() !== "") {
+      notes.push({ text: e.target.value.trim(), starred: false });
+      e.target.value = "";
+      $("notes-input-container").hidden = true;
+      saveNotes();
+    }
+  });
+
   let ctx = null, nextTime = 0, sources = [];
   const ensureCtx = () => { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: state.sampleRate }); if (ctx.state === "suspended") ctx.resume(); return ctx; };
   const playPCM = (buf) => {
@@ -90,7 +174,6 @@
     catch (err) { showStatus("Fehler beim Trennen: " + err.message, "err"); }
   });
 
-  // Handler für den Chat-Löschen-Button
   $("clearchat").addEventListener("click", async () => {
     if (!confirm("Möchten Sie den gesamten Chatverlauf wirklich löschen, Sir?")) return;
     try {
@@ -241,5 +324,6 @@
 
   $("textform").addEventListener("submit", (e) => { e.preventDefault(); sendText($("textin").value); $("textin").value = ""; });
   refreshCalStatus();
+  loadNotes();
   connect();
 })();
