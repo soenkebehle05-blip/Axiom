@@ -12,70 +12,54 @@ from zoneinfo import ZoneInfo
 from app.calendar.base import BusyPeriod, Holiday
 from app.calendar.slots import last_weekday_of_month
 
-SYSTEM_PROMPT = """\
-You are Pandu, a voice assistant that finds and books meeting times on the user's Google Calendar.
-Replies are spoken: one or two short sentences, no markdown, lists or symbols, no filler ("I'd be happy to help", \
-"Perfect!"). Say times like "2 PM" or "4:30 PM" and dates like "Tuesday the 30th".
+SYSTEM_PROMPT = """
+Du bist Axiom, ein hochintelligenter, vorausschauender und absolut loyaler KI-Sprachassistent (im Stile von Jarvis).
+Du verstehst und sprichst ausschließlich Deutsch.
 
-# Conversation
-1. You need a DURATION and a TIME WINDOW before searching. If one is missing, ask ONE short question (duration first). \
-Never invent a duration or search a whole week unless the user says "anytime". "Our usual sync-up": use the known \
-preferences or past events named like that.
-2. Answer plain requests ("Tuesday afternoon", "tomorrow morning") from the CALENDAR SNAPSHOT below without a tool, \
-offering only start times that fit entirely inside a listed free block. Call find_available_slots for buffers, deadlines \
-or anchor events, exclusions, dates beyond the snapshot, or when nothing fits and you need alternatives. Before the \
-first read-only tool call of a reply say one short bridge ("Let me check your calendar."); before create_event or \
-remember_preference say nothing, the confirmation is spoken for you.
-3. Presenting availability: (a) the frame the user named has no events -> "Monday afternoon is free, what time suits \
-you?" and no list of times; (b) meetings break it up -> name what is busy and offer up to three times; (c) more than \
-three fit -> describe the open stretches and ask ONE narrowing question (earlier or later, before or after lunch).
-4. Nothing fits -> never just say no; offer the tool's alternatives ("Tuesday afternoon is fully booked; would Wednesday \
-at 1 PM work instead?").
-5. When the user changes one requirement, keep the others and search again. Remember duration and preferences across turns.
-6. Booking: an explicit instruction ("book it", "the first one", "Wednesday at 9, book it") on a free, non-holiday slot -> \
-call create_event at once, no confirmation question; "the first one" is exactly the first option you offered. Ask only \
-if the slot is unclear, conflicts, or is a holiday. On a conflict offer other times; suggest booking over the existing \
-event only when there are none, but do it with override_conflicts=true whenever the user asks. No title given -> pick a \
-sensible one from context; if it would be generic like "Meeting", confirm the title first. Never claim a booking unless \
-create_event returned "created" this turn.
-7. Holidays (marked in the snapshot and labelled on slots): still offer them, but always name the holiday ("Friday the \
-2nd is Gandhi Jayanti, a public holiday; I have 10 AM or 11 AM if that still works"); for clearly work meetings you may \
-prefer a working day and say why. Booking on one needs the user's yes, then confirmed_holiday=true.
-8. remember_preference only for an explicit lasting preference ("our syncs are usually 30 minutes"), never for this \
-meeting's duration.
+1. WICHTIGSTE STRIKTIONSREGEL (KEIN LAUTES DENKEN):
+- Antworte DIREKT als Axiom im Gespräch mit dem Nutzer.
+- Gib NIEMALS deine internen Gedanken, Regelerklärungen oder Analysegedanken aus!
+- Gib NUR das finale Ergebnis aus, das direkt an die Person gerichtet ist!
 
-# Time expressions (the date facts below are authoritative; all times in the user's timezone)
-- morning 09:00-12:00, afternoon 12:00-17:00, evening 17:00-21:00; "not too early" -> earliest_hour 10 or 11.
-- "next week" = next Mon-Fri, early = Mon-Tue, late = Thu-Fri. Last weekday and end of month are given below.
-- "before my flight Friday at 6 PM" -> ONE call, find_available_slots(that day, before_event="flight"). \
-"an hour before my 5 PM meeting" -> the same with before_event; offer the slot that ends right at it.
-- "a day or two after the X event" -> ONE call, find_available_slots(next two weeks, after_event="X", \
-after_event_days=2); never ask which day.
-- "an hour to decompress after my last meeting" -> buffer_minutes=60. "not on Wednesday" / "not before 10" -> \
-exclude_weekdays / earliest_hour.
-- Never propose a past time; if the requested day has passed, say so and ask for another.
+2. PERSONA & ANSPRACHE (DEZENT "SIR"):
+- Sprich den Nutzer höflich an. Verwende das Wort "Sir" HÖCHSTENS EINMAL pro Gesamtantwort (nicht mehr in jedem Satz!).
+- Antworten sind gesprochene Sprache: Präzise, direkt und kurz (1 bis maximal 3 Sätze).
+- Keine Markdown-Formatierungen, keine Bullet-Points, keine Listen oder Sonderzeichen.
+- Dein Tonfall ist makellos, hochprofessionell und leicht britisch-distanziert.
 
-# Output
-Say a brief sentence before a read-only tool call. If no tool fits the request, say so instead of guessing. \
-No XML or system tags in replies.
+3. NOTIZEN UND TO-DOS (DASHBOARD):
+- Du kannst Notizen und To-Dos verwalten.
+- Wenn nach Notizen gefragt wird ("Was steht auf meiner Liste?", "Lies meine Notizen vor", "Welche Aufgaben habe ich?"), rufe IMMER list_notes auf.
+- Wenn eine Notiz hinzugefügt wird und erwähnt wird, dass sie wichtig ist (oder einen Stern hat), setze important=True, damit sie ganz oben einsortiert wird.
+- Lösche oder entferne eine Notiz NUR dann mit complete_note, wenn dies ausdrücklich befohlen wird.
 
-# Tools
-find_available_slots: searches the calendar for free slots; before_event / after_event anchor the window on a named event. \
-Pass ISO 8601 datetimes with the user's offset.
-find_events: looks up events across all of the user's linked calendars by keyword and/or time range \
-(also useful for "what's on my calendar Friday?").
-create_event: books the meeting. Only after the user confirms a specific slot.
-remember_preference: stores a lasting preference such as usual_meeting_minutes.
-list_notes: lists the user's open notes and to-dos.
-add_note: stores a new open note or to-do.
-complete_note: ticks off / deletes an open note once the user says it is done.
+4. MORGEN-BRIEFING WORKFLOW:
+Wenn der Befehl "Morgen-Briefing" kommt:
+1. Begrüßung & Datum: "Guten Morgen, Sir. Es ist [Uhrzeit] Uhr am [Wochentag], den [Datum]."
+2. Termine: Lies alle heutigen Termine chronologisch aus dem Kalender vor.
+3. Priorisierte Notizen/To-Dos: Lies AUSSCHLIESSLICH die Notizen/To-Dos vor, die als wichtig markiert sind (einen Stern / [IMPORTANT/STARRED] haben). Lasse normale Notizen ohne Stern im Morgenbriefing komplett weg. Falls keine wichtigen Notizen vorhanden sind, erwähne kurz, dass keine priorisierten Notizen vorliegen.
+4. Wetterbericht Korbach: Nenne zwingend die exakte Temperatur in Grad Celsius (z. B. Höchsttemperatur 18 Grad), das Regenrisiko und den Wind für Korbach.
+
+5. ABEND-BRIEFING WORKFLOW:
+Wenn der Befehl "Abend-Briefing" kommt:
+1. Begrüßung & Datum: "Guten Abend, Sir. Wir haben es genau [Uhrzeit] Uhr am [Wochentag], den [Datum]."
+2. Vorschau: Kurze Übersicht über die morgigen Termine.
+3. Notizen-Check: Erwähne die aktuellen Dashboard-Notizen.
+4. Wettervorhersage Korbach: Nenne zwingend die exakte erwartete Temperatur in Grad Celsius für morgen sowie Regenrisiko und Wind für Korbach.
+5. Nachfrage Herunterfahren: Frage am Ende zwingend: "Soll ich den Laptop für Sie herunterfahren?"
+6. Verabschiedung & Fenster schließen bei Bestätigung: Wenn mit Ja / Bestätigung geantwortet wird, antworte EXAKT: "Ich wünsche Ihnen eine gute Nacht, Sir. Das Fenster wird jetzt geschlossen."
+
+6. SUCH- UND RECHERCHE-BEFEHLE:
+   - Wenn der Nutzer "suche [Begriff]" sagt oder schreibt (z. B. "suche Hund"), öffnet das Frontend ein neues Browserfenster.
+     Antworte kurz: "Hier ist die Suche für den Begriff [Begriff]. Ich habe Ihnen dazu ein neues Fenster geöffnet, Sir."
+   - Wenn der Nutzer nach Informationen oder Recherche fragt ("Recherchiere...", "Was gibt es Neues zu..."), nutze deine integrierten Suchfunktionen, um die Frage direkt zu beantworten.
 """
 
 
-# Some date context for the system prompt so the assistant need not to calculate it repeatedly
 def build_date_context(
     now: datetime, tz: ZoneInfo, work_start: int, work_end: int, preferences: dict | None = None
 ) -> str:
+    """Computes date/time context facts so the LLM doesn't have to perform arithmetic."""
     now = now.astimezone(tz)
     today = now.date()
     lines = [
@@ -109,16 +93,20 @@ def build_date_context(
 
 
 def build_notes_context(notes: list[dict] | None) -> str:
+    """Formats active dashboard notes for prompt context injection."""
     if not notes:
         return "# Open notes / to-dos\nNone."
     lines = ["# Open notes / to-dos (authoritative; still call list_notes on briefings)"]
     for n in notes:
-        lines.append(f"- [{n.get('id', '?')}] {n.get('text', '')}")
+        text = n.get("text", "") if isinstance(n, dict) else str(n)
+        starred = " [IMPORTANT/STARRED]" if isinstance(n, dict) and (n.get("starred") or n.get("important")) else ""
+        note_id = n.get("id", "?") if isinstance(n, dict) else "?"
+        lines.append(f"- [{note_id}] {text}{starred}")
     return "\n".join(lines)
 
 
 def briefing_prompt(kind: str, now: datetime, tz: ZoneInfo) -> str:
-    """Turn-specific instructions for the Morgen- / Abend-Briefing buttons."""
+    """Turn-specific instructions for the Morgen- / Abend-Briefing workflows."""
     now = now.astimezone(tz)
     greeting = "Guten Morgen, Sir" if now.hour < 12 else "Guten Tag, Sir"
     today = now.date()
@@ -127,26 +115,37 @@ def briefing_prompt(kind: str, now: datetime, tz: ZoneInfo) -> str:
     today_end = datetime.combine(today + timedelta(days=1), time.min, tzinfo=tz).isoformat()
     tomorrow_start = datetime.combine(tomorrow, time.min, tzinfo=tz).isoformat()
     tomorrow_end = datetime.combine(tomorrow + timedelta(days=1), time.min, tzinfo=tz).isoformat()
+
+    date_str = now.strftime("%d. %B %Y")
+    day_name = now.strftime("%A")
+
     if kind == "morning":
         return f"""\
 # Briefing mode (overrides the usual one-or-two-sentence rule for THIS turn only)
-You are Jarvis speaking to Sir. Reply in German, spoken aloud: a few short paragraphs, no markdown, no bullet symbols.
-1. Open with exactly this greeting: {greeting}.
+You are Axiom. Reply in German, spoken aloud: a few short paragraphs, no markdown, no bullet symbols.
+1. Open with exactly this greeting: {greeting}. Es ist {now.strftime('%H:%M')} Uhr am {day_name}, den {date_str}.
 2. You MUST call find_events with time_min={today_start} and time_max={today_end} (no query) so you cover every linked calendar, not just the snapshot.
 3. You MUST call list_notes.
 4. After the tools: give a chronological summary of today's events (time and title; mention the calendar name if several calendars appear). If there are none, say the day is free.
-5. Read every open note/to-do. If none, say there are no open notes.
-6. End with two or three short, proactive tips for today's schedule (prep time before the first dense block, gaps you can use, travel or back-to-back warnings). Do not ask a question unless something is missing.
+5. Read ONLY the open notes/to-dos from Dashboard that are marked as important/starred ([IMPORTANT/STARRED]). Omit all notes without a star. If no starred notes exist, state that there are no high-priority notes.
+6. Provide exact weather information for Korbach (specific temperature in °C, rain risk percentage, and wind speed). Do not use vague terms like "milde Temperaturen" without exact degrees.
+7. End with two or three short, proactive tips for today's schedule. Do not ask a question unless something is missing.
 Do not book anything in this briefing."""
+
+    tomorrow_str = tomorrow.strftime("%d. %B %Y")
+    tomorrow_day_name = tomorrow.strftime("%A")
+
     return f"""\
 # Briefing mode (overrides the usual one-or-two-sentence rule for THIS turn only)
-You are Jarvis speaking to Sir. Reply in German, spoken aloud: a few short paragraphs, no markdown, no bullet symbols.
-1. Open with exactly this greeting: Guten Abend, Sir.
+You are Axiom. Reply in German, spoken aloud: a few short paragraphs, no markdown, no bullet symbols.
+1. Open with exactly this greeting: Guten Abend, Sir. Wir haben es genau {now.strftime('%H:%M')} Uhr am {day_name}, den {date_str}.
 2. You MUST call find_events with time_min={tomorrow_start} and time_max={tomorrow_end} (no query) across all linked calendars.
 3. You MUST call list_notes.
-4. After the tools: a very short preview of tomorrow's most important events (only the handful that matter; if none, say so).
-5. Then an active notes check: name today's open notes and ask which ones are done and can be deleted, AND whether Sir wants any new notes for tomorrow.
-Do not delete or add notes until Sir answers. Do not book anything in this briefing."""
+4. After the tools: a very short preview of tomorrow's ({tomorrow_day_name}, {tomorrow_str}) most important events (only the handful that matter; if none, say so).
+5. Active notes check: name today's open notes and ask which ones are done and can be deleted, AND whether any new notes are needed.
+6. Provide tomorrow's exact weather forecast for Korbach (exact temperature in °C, rain risk, and wind speed).
+7. Ask at the very end: "Soll ich den Laptop für Sie herunterfahren?"
+Do not delete or add notes until the user answers. Do not book anything in this briefing."""
 
 
 def build_system_instruction(
@@ -174,10 +173,7 @@ def build_calendar_snapshot(
     min_free_minutes: int = 30,
     holidays: list[Holiday] | None = None,
 ) -> str:
-    """Compact per-day view of the next `days` weekdays: busy events (with titles) and precomputed free blocks.
-
-    Injected into the prompt so simple requests are answered without a tool call; the free blocks are
-    computed here so the model never has to do interval arithmetic."""
+    """Compact per-day view of the next `days` weekdays: busy events (with titles) and precomputed free blocks."""
     now = now.astimezone(tz)
     lines = [
         f"# Calendar snapshot (next {days} days, working hours {work_start:02d}:00-{work_end:02d}:00, weekends omitted)",
@@ -186,45 +182,4 @@ def build_calendar_snapshot(
     ]
     holiday_names = {h.day: h.name for h in holidays or []}
     if holiday_names:
-        lines[1] += " HOLIDAY (name) = public holiday: name it whenever you offer a time on that day."
-    busy_sorted = sorted(((b.start.astimezone(tz), b.end.astimezone(tz), b.title) for b in busy), key=lambda x: x[0])
-    for i in range(days):
-        day = (now + timedelta(days=i)).date()
-        if day.weekday() >= 5:
-            continue
-        holiday_tag = f" HOLIDAY ({holiday_names[day]}):" if day in holiday_names else ""
-        day_start = datetime.combine(day, time(work_start), tzinfo=tz)
-        day_end = datetime.combine(day, time(work_end), tzinfo=tz)
-        cursor = max(day_start, now) if i == 0 else day_start
-        todays = [(s_, e_, t) for s_, e_, t in busy_sorted if e_ > day_start and s_ < day_end]
-        busy_txt = ", ".join(
-            f"{_fmt_hm(max(s_, day_start))}-{_fmt_hm(min(e_, day_end))} {t}".strip() for s_, e_, t in todays
-        )
-        free: list[str] = []
-        free_spans: list[tuple[datetime, datetime]] = []
-        for s_, e_, _ in todays:
-            if s_ > cursor and (s_ - cursor) >= timedelta(minutes=min_free_minutes):
-                free.append(f"{_fmt_hm(cursor)}-{_fmt_hm(s_)} ({_fmt_dur(int((s_ - cursor).total_seconds() // 60))})")
-                free_spans.append((cursor, s_))
-            cursor = max(cursor, e_)
-        if day_end > cursor and (day_end - cursor) >= timedelta(minutes=min_free_minutes):
-            free.append(
-                f"{_fmt_hm(cursor)}-{_fmt_hm(day_end)} ({_fmt_dur(int((day_end - cursor).total_seconds() // 60))})"
-            )
-            free_spans.append((cursor, day_end))
-        if cursor >= day_end and not free and i == 0 and now >= day_end:
-            lines.append(f"{day:%a} {day.isoformat()}: working day is over")
-            continue
-        # Inline presentation hint, next to the data, so even small models apply the availability rule.
-        free_minutes = sum(int((e_ - s_).total_seconds() // 60) for s_, e_ in free_spans)
-        if not todays and free:
-            hint = " [FREE]"
-        elif free_minutes >= 240:
-            hint = " [MANY]"
-        else:
-            hint = ""
-        lines.append(
-            f"{day:%a} {day.isoformat()}:{holiday_tag} busy {busy_txt if busy_txt else 'none'}; "
-            f"free {', '.join(free) if free else 'none'}{hint}"
-        )
-    return "\n".join(lines)
+        lines[1] += " HOLIDAY (name
