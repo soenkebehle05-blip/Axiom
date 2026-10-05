@@ -182,4 +182,45 @@ def build_calendar_snapshot(
     ]
     holiday_names = {h.day: h.name for h in holidays or []}
     if holiday_names:
-        lines[1] += " HOLIDAY (name
+        lines[1] += " HOLIDAY (name) = public holiday: name it whenever you offer a time on that day."
+    busy_sorted = sorted(((b.start.astimezone(tz), b.end.astimezone(tz), b.title) for b in busy), key=lambda x: x[0])
+    for i in range(days):
+        day = (now + timedelta(days=i)).date()
+        if day.weekday() >= 5:
+            continue
+        holiday_tag = f" HOLIDAY ({holiday_names[day]}):" if day in holiday_names else ""
+        day_start = datetime.combine(day, time(work_start), tzinfo=tz)
+        day_end = datetime.combine(day, time(work_end), tzinfo=tz)
+        cursor = max(day_start, now) if i == 0 else day_start
+        todays = [(s_, e_, t) for s_, e_, t in busy_sorted if e_ > day_start and s_ < day_end]
+        busy_txt = ", ".join(
+            f"{_fmt_hm(max(s_, day_start))}-{_fmt_hm(min(e_, day_end))} {t}".strip() for s_, e_, t in todays
+        )
+        free: list[str] = []
+        free_spans: list[tuple[datetime, datetime]] = []
+        for s_, e_, _ in todays:
+            if s_ > cursor and (s_ - cursor) >= timedelta(minutes=min_free_minutes):
+                free.append(f"{_fmt_hm(cursor)}-{_fmt_hm(s_)} ({_fmt_dur(int((s_ - cursor).total_seconds() // 60))})")
+                free_spans.append((cursor, s_))
+            cursor = max(cursor, e_)
+        if day_end > cursor and (day_end - cursor) >= timedelta(minutes=min_free_minutes):
+            free.append(
+                f"{_fmt_hm(cursor)}-{_fmt_hm(day_end)} ({_fmt_dur(int((day_end - cursor).total_seconds() // 60))})"
+            )
+            free_spans.append((cursor, day_end))
+        if cursor >= day_end and not free and i == 0 and now >= day_end:
+            lines.append(f"{day:%a} {day.isoformat()}: working day is over")
+            continue
+
+        free_minutes = sum(int((e_ - s_).total_seconds() // 60) for s_, e_ in free_spans)
+        if not todays and free:
+            hint = " [FREE]"
+        elif free_minutes >= 240:
+            hint = " [MANY]"
+        else:
+            hint = ""
+        lines.append(
+            f"{day:%a} {day.isoformat()}:{holiday_tag} busy {busy_txt if busy_txt else 'none'}; "
+            f"free {', '.join(free) if free else 'none'}{hint}"
+        )
+    return "\n".join(lines)
