@@ -4,10 +4,33 @@
   const transcript = $("transcript"), mic = $("mic"), interim = $("interim");
   const state = { ws: null, listening: false, speaking: false, sampleRate: 24000, serverTTS: true,
                   speechEndAt: 0, audioRole: "reply",
-                  botEl: null, botText: "", lastPartial: "", partialTimer: null };
+                  botEl: null, botText: "", lastPartial: "", partialTimer: null, closeWindowAfterSpeech: false };
+
+  // ---------- briefing music ----------
+  let briefingAudio = null;
+  const playBriefingMusic = () => {
+    try {
+      if (!briefingAudio) {
+        briefingAudio = new Audio('/static/briefing_music.mp3');
+        briefingAudio.volume = 0.15;
+      }
+      briefingAudio.currentTime = 0;
+      const p = briefingAudio.play();
+      if (p !== undefined) {
+        p.catch((err) => console.log("Audio play deferred or blocked:", err));
+      }
+    } catch (e) {
+      console.log("Briefing audio error:", e);
+    }
+  };
+  const stopBriefingMusic = () => {
+    if (briefingAudio) {
+      briefingAudio.pause();
+      briefingAudio.currentTime = 0;
+    }
+  };
 
   // ---------- turn timing (console only) ----------
-  // No timings are shown in the UI; one debug line per turn is logged for your own measurements.
   const timing = { t0: 0, firstSound: 0, firstReply: 0, tool: false };
   const resetTiming = (t0) => { timing.t0 = t0; timing.firstSound = 0; timing.firstReply = 0; timing.tool = false; };
   const markSound = (at) => { if (!timing.firstSound) timing.firstSound = at; };
@@ -35,35 +58,44 @@
   const ensureCtx = () => { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: state.sampleRate }); if (ctx.state === "suspended") ctx.resume(); return ctx; };
   const playPCM = (buf) => {
     const ac = ensureCtx();
-    if (buf.byteLength % 2) buf = buf.slice(0, buf.byteLength - 1);  // defensive: Int16Array needs an even byte count
+    if (buf.byteLength % 2) buf = buf.slice(0, buf.byteLength - 1);
     const i16 = new Int16Array(buf); const f32 = new Float32Array(i16.length);
     for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
     const audio = ac.createBuffer(1, f32.length, state.sampleRate); audio.copyToChannel(f32, 0);
     const src = ac.createBufferSource(); src.buffer = audio; src.connect(ac.destination);
     const startAt = Math.max(ac.currentTime + 0.02, nextTime); src.start(startAt); nextTime = startAt + audio.duration;
     sources.push(src); src.onended = () => { sources = sources.filter((s) => s !== src); if (!sources.length && state.audioDone) onSpeechDone(); };
-    return performance.now() + (startAt - ac.currentTime) * 1000;  // when this chunk will actually be heard
+    return performance.now() + (startAt - ac.currentTime) * 1000;
   };
   const stopAudio = () => { sources.forEach((s) => { s.onended = null; try { s.stop(); } catch (_) {} }); sources = []; nextTime = 0; window.speechSynthesis?.cancel(); };
-  // Runs once per turn (it can be triggered both by the last audio chunk ending and by the server's audio_end).
+  
   const onSpeechDone = () => {
     state.speaking = false; mic.classList.remove("speaking");
+    stopBriefingMusic();
     if (state.turnFinished) return;
     state.turnFinished = true; logTurnTiming();
-    if (state.listenAfter === false) { stopListening(); return; }  // a booking was made: the goal is reached, keep the mic closed
+
+    if (state.closeWindowAfterSpeech) {
+      setTimeout(() => {
+        window.close();
+        window.location.href = "about:blank";
+      }, 500);
+      return;
+    }
+
+    if (state.listenAfter === false) { stopListening(); return; }
     if ($("autolisten").checked && !state.listening) startListening();
   };
 
-  // Browser TTS fallback (used when the server has no Cloud TTS credentials).
   const speakBrowser = (text, isAck = false) => {
     if (!text || !window.speechSynthesis) { if (!isAck) onSpeechDone(); return; }
-    const u = new SpeechSynthesisUtterance(text); u.rate = 1.05;
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.lang = "de-DE";
     u.onstart = () => { const now = performance.now(); markSound(now); if (!isAck) markReply(now); };
     if (!isAck) u.onend = onSpeechDone;
     state.speaking = true; window.speechSynthesis.speak(u);
   };
 
-  // ---------- calendar connection (Google sign-in, per browser) ----------
+  // ---------- calendar connection ----------
   const cal = { connected: false, source: "none", oauth: false };
   const calPanel = $("calpanel"), calStatus = $("calstatus");
   const setInputsEnabled = (on) => { mic.disabled = !on || (state.stt !== "deepgram" && !rec); $("textin").disabled = !on; };
@@ -109,7 +141,6 @@
     } catch (err) { showStatus("Upload failed: " + err.message, "err"); }
     finally { $("calsubmit").disabled = false; }
   });
-  // Returning from Google's consent page: /?calendar=connected|error&reason=...
   const params = new URLSearchParams(location.search);
   if (params.get("calendar")) {
     history.replaceState(null, "", location.pathname);
@@ -125,7 +156,7 @@
     ws.onclose = () => {
       clearTimeout(state.idleTimer); clearTimeout(state.partialTimer); clearTimeout(state.watchdog);
       state.listening = false; state.speaking = false;
-      stopCapture(); rec?.abort(); stopAudio();
+      stopCapture(); rec?.abort(); stopAudio(); stopBriefingMusic();
       mic.classList.remove("listening", "speaking");
       $("conn").textContent = "disconnected"; $("conn").className = "pill warn";
       setTimeout(connect, 1500);
@@ -148,9 +179,8 @@
           else mic.disabled = false;
           $("conn").textContent += m.stt === "deepgram" ? " · Deepgram STT" : " · browser STT"; break;
         case "transcript":
-          if (!m.final) { interim.textContent = m.text; armIdleTimer(); break; }  // speech in progress: keep the mic open
+          if (!m.final) { interim.textContent = m.text; armIdleTimer(); break; }
           interim.textContent = ""; clearTimeout(state.idleTimer);
-          // The server finished the utterance; the clock starts when the speech actually ended.
           beginTurn(m.text, performance.now() - (m.speech_end_ago_ms || 0), false);
           if (state.listening) { state.listening = false; mic.classList.remove("listening"); stopCapture(); state.ws.send(JSON.stringify({ type: "listen_stop" })); }
           break;
@@ -167,12 +197,16 @@
         case "tool_result": { const last = transcript.querySelector("details.tool:last-of-type"); if (last) last.querySelector("pre").textContent += "\n→ " + JSON.stringify(m.result, null, 1); break; }
         case "turn_end":
           clearTimeout(state.watchdog);
-          state.listenAfter = m.listen_after !== false;  // false after a booking: the goal is reached, keep the mic closed
-          if (!state.listenAfter && state.listening) stopListening();  // e.g. the mic was still open while the user typed "book it"
+          state.listenAfter = m.listen_after !== false;
+          if (!state.listenAfter && state.listening) stopListening();
           if (state.botEl) state.botEl.textContent = m.text || state.botText;
+          
+          if ((m.text || state.botText).toLowerCase().includes("geschlossen")) {
+            state.closeWindowAfterSpeech = true;
+          }
+
           if (!state.serverTTS) { state.speaking = true; speakBrowser(m.text); } break;
         case "audio_end":
-          // No more reply audio is coming. Finish the turn now if playback already drained, else when the last chunk ends.
           state.audioDone = true;
           if (state.serverTTS && !sources.length) onSpeechDone();
           break;
@@ -185,11 +219,27 @@
     };
   };
 
-  // Start a new turn in the UI. `send` is false when the server already has the transcript (server-side STT).
+  const handleSearchCheck = (text) => {
+    const lower = text.toLowerCase().trim();
+    if (lower.startsWith("suche ") || lower.startsWith("suche nach ")) {
+      const query = lower.replace(/^suche (nach )?/, "").trim();
+      if (query) {
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+      }
+    }
+  };
+
   const beginTurn = (text, sentAt, send = true) => {
     text = text.trim(); if (!text || !state.ws || state.ws.readyState !== 1) return;
     stopAudio(); if (state.speaking && send) state.ws.send(JSON.stringify({ type: "cancel" }));
     state.speaking = false; mic.classList.remove("speaking");
+    
+    handleSearchCheck(text);
+
+    if (text.toLowerCase().includes("morgen-briefing") || text.toLowerCase().includes("morgenbriefing")) {
+      playBriefingMusic();
+    }
+
     addMsg("user", text); state.botEl = null; state.botText = ""; state.audioRole = "reply"; state.lastPartial = ""; clearTimeout(state.partialTimer);
     resetTiming(sentAt); state.speechEndAt = 0; state.turnFinished = false; state.listenAfter = true; state.audioDone = false;
     clearTimeout(state.watchdog);
@@ -200,11 +250,10 @@
   };
   const sendText = (text) => {
     const now = performance.now();
-    beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now);  // spoken: clock starts at end of speech
+    beginTurn(text, (state.speechEndAt && now - state.speechEndAt < 5000) ? state.speechEndAt : now);
   };
 
   // ---------- speech recognition ----------
-  // Two modes: the server transcribes the mic stream (Deepgram, any browser) or Chrome's Web Speech API.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   const capture = { stream: null, source: null, node: null };
@@ -217,22 +266,20 @@
     const ac = ensureCtx();
     if (!ac.audioWorklet) throw new Error("AudioWorklet unsupported");
     if (!capture.moduleLoaded) { await ac.audioWorklet.addModule("/static/pcm-worklet.js"); capture.moduleLoaded = true; }
-    // Echo cancellation removes the assistant's own voice from the mic signal.
     capture.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     capture.source = ac.createMediaStreamSource(capture.stream);
     capture.node = new AudioWorkletNode(ac, "pcm-capture");
     capture.node.port.onmessage = (e) => { if (state.listening && state.ws && state.ws.readyState === 1) state.ws.send(e.data); };
-    capture.source.connect(capture.node);  // the node produces no output, so nothing is heard
+    capture.source.connect(capture.node);
     state.ws.send(JSON.stringify({ type: "listen_start", sample_rate: ac.sampleRate }));
   };
   if (SR) {
-    rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    rec = new SR(); rec.lang = "de-DE"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
     rec.onresult = (e) => {
       let finalText = "", interimText = "";
       for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript) : (interimText += r[0].transcript));
       interim.textContent = interimText || finalText;
       if (finalText) { interim.textContent = ""; sendText(finalText); return; }
-      // Speculative start: after the interim text has been stable for 250 ms, let the server start the model on it.
       if (state.speculation && interimText.trim() && state.ws && state.ws.readyState === 1) {
         clearTimeout(state.partialTimer);
         state.partialTimer = setTimeout(() => {
@@ -246,7 +293,6 @@
     rec.onerror = (e) => { if (e.error !== "no-speech" && e.error !== "aborted") addMsg("error", "Speech recognition: " + e.error); };
   }
   const serverSTT = () => state.stt === "deepgram";
-  // Close the mic after this long without speech (server-side STT has no silence limit of its own, and it bills per second).
   const LISTEN_IDLE_MS = 8000;
   const armIdleTimer = () => { clearTimeout(state.idleTimer); state.idleTimer = setTimeout(() => { if (state.listening) { interim.textContent = ""; stopListening(); } }, LISTEN_IDLE_MS); };
   const startListening = async () => {
@@ -271,7 +317,12 @@
   mic.addEventListener("click", () => (state.listening ? stopListening() : startListening()));
   document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target === document.body) { e.preventDefault(); startListening(); } });
 
-  $("textform").addEventListener("submit", (e) => { e.preventDefault(); sendText($("textin").value); $("textin").value = ""; });
+  $("textform").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const val = $("textin").value;
+    sendText(val);
+    $("textin").value = "";
+  });
   refreshCalStatus();
   connect();
 })();
