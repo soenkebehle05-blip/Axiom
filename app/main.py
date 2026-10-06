@@ -209,6 +209,14 @@ async def index(request: Request):
     return resp
 
 
+@app.get("/api/notes")
+async def get_notes(request: Request):
+    rt: Runtime = app.state.rt
+    uid = request.cookies.get(UID_COOKIE)
+    notes = rt.user_notes.get(uid, []) if uid else []
+    return {"notes": notes}
+
+
 @app.get("/health")
 async def health():
     rt: Runtime = app.state.rt
