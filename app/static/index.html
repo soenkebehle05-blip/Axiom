@@ -7,72 +7,87 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <main class="app">
-    <header>
-      <div>
-        <h1>Smart Scheduler</h1>
-        <p class="sub">Voice agent that finds and books meeting times on Google Calendar</p>
-      </div>
-      <div class="status" id="status">
-        <span class="pill" id="conn">connecting…</span>
-        <button class="pill clickable" id="calmode" title="Connect or replace the Google Calendar token">Calendar: checking…</button>
-        <span class="pill" id="ttsmode"></span>
-      </div>
-    </header>
-
-    <div class="overlay" id="calpanel" hidden>
-      <div class="panel">
-        <h2 id="calpanel-title">Connect Google Calendar</h2>
-        <p class="hint">The agent reads and books on a real Google Calendar. Connect yours to try it against your own schedule; it stays tied to this browser only.</p>
-        <p class="hint" id="calpanel-current" hidden></p>
-        <div class="row">
-          <button type="button" id="calsignin">Sign in with Google</button>
-          <button type="button" id="caldisconnect" class="secondary" hidden>Disconnect (use default)</button>
-          <button type="button" id="calclose" class="secondary">Close</button>
+  <div class="app-container">
+    <main class="app">
+      <header>
+        <div>
+          <h1>Smart Scheduler</h1>
+          <p class="sub">Voice agent that finds and books meeting times on Google Calendar</p>
         </div>
-        <details class="advanced">
-          <summary class="hint">Advanced: upload a token.json instead</summary>
-          <p class="hint">Run <code>uv run scripts/authorize_google.py</code> in the project folder; it writes <code>token.json</code>. Choose that file:</p>
-          <form id="calform">
-            <input type="file" id="calfile" accept=".json,application/json" required />
-            <div class="row"><button type="submit" id="calsubmit">Upload token</button></div>
-          </form>
-        </details>
-        <p class="hint status" id="calstatus"></p>
+        <div class="status" id="status">
+          <span class="pill" id="conn">connecting…</span>
+          <button class="pill clickable" id="calmode" title="Connect or replace the Google Calendar token">Calendar: checking…</button>
+          <span class="pill" id="ttsmode"></span>
+        </div>
+      </header>
+
+      <div class="overlay" id="calpanel" hidden>
+        <div class="panel">
+          <h2 id="calpanel-title">Connect Google Calendar</h2>
+          <p class="hint">The agent reads and books on a real Google Calendar. Connect yours to try it against your own schedule; it stays tied to this browser only.</p>
+          <p class="hint" id="calpanel-current" hidden></p>
+          <div class="row">
+            <button type="button" id="calsignin">Sign in with Google</button>
+            <button type="button" id="caldisconnect" class="secondary" hidden>Disconnect (use default)</button>
+            <button type="button" id="calclose" class="secondary">Close</button>
+          </div>
+          <details class="advanced">
+            <summary class="hint">Advanced: upload a token.json instead</summary>
+            <p class="hint">Run <code>uv run scripts/authorize_google.py</code> in the project folder; it writes <code>token.json</code>. Choose that file:</p>
+            <form id="calform">
+              <input type="file" id="calfile" accept=".json,application/json" required />
+              <div class="row"><button type="submit" id="calsubmit">Upload token</button></div>
+            </form>
+          </details>
+          <p class="hint status" id="calstatus"></p>
+        </div>
       </div>
-    </div>
 
-    <section class="hud">
-      <label class="toggle"><input type="checkbox" id="autolisten" checked /> Auto-listen after reply</label>
-    </section>
+      <section class="hud">
+        <label class="toggle"><input type="checkbox" id="autolisten" checked /> Auto-listen after reply</label>
+      </section>
 
-    <section class="notes-dashboard" id="notes-dashboard" style="margin: 1rem 0; padding: 1rem; border: 1px solid #ccc; border-radius: 8px;">
-      <h2>📋 Notizen-Dashboard</h2>
-      <ul id="notes-list" style="list-style-type: disc; padding-left: 1.5rem;">
+      <audio id="briefing-audio" src="/static/briefing_music.mp4" preload="auto"></audio>
+
+      <section class="transcript" id="transcript">
+        <div class="msg bot">Hi! Tell me what you'd like to schedule, for example "I need a 30-minute meeting on Tuesday afternoon".</div>
+      </section>
+
+      <div class="briefing-dock" aria-label="Briefings">
+        <button type="button" class="briefing" id="brief-morning" disabled>🌅 Morgen-Briefing</button>
+        <button type="button" class="briefing" id="brief-evening" disabled>🌙 Abend-Briefing</button>
+      </div>
+
+      <footer>
+        <button id="mic" class="mic" title="Click to talk (or hold Space)">
+          <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
+        </button>
+        <div class="interim" id="interim"></div>
+        <form id="textform" autocomplete="off">
+          <input id="textin" placeholder="…or type here and press Enter" />
+        </form>
+      </footer>
+    </main>
+
+    <!-- Sidebar rechts für Notizen -->
+    <aside class="notes-sidebar" id="notes-dashboard">
+      <div class="notes-header">
+        <h2>📋 Notizen</h2>
+        <button type="button" id="add-note-btn" class="add-btn" title="Neue Notiz hinzufügen">+</button>
+      </div>
+      
+      <!-- Eingabefeld (wird bei Klick auf + angezeigt) -->
+      <div id="add-note-form" class="add-note-form" hidden>
+        <input type="text" id="new-note-text" placeholder="Notiz eingeben..." />
+        <button type="button" id="save-note-btn">Speichern</button>
+      </div>
+
+      <ul id="notes-list" class="notes-list">
         <li>Keine Notizen vorhanden.</li>
       </ul>
-    </section>
+    </aside>
+  </div>
 
-    <audio id="briefing-audio" src="/static/briefing_music.mp4" preload="auto"></audio>
-
-    <section class="transcript" id="transcript">
-      <div class="msg bot">Hi! Tell me what you'd like to schedule, for example "I need a 30-minute meeting on Tuesday afternoon".</div>
-    </section>
-
-    <div class="briefing-dock" aria-label="Briefings">
-      <button type="button" class="briefing" id="brief-morning" disabled>🌅 Morgen-Briefing</button>
-      <button type="button" class="briefing" id="brief-evening" disabled>🌙 Abend-Briefing</button>
-    </div>
-    <footer>
-      <button id="mic" class="mic" title="Click to talk (or hold Space)">
-        <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
-      </button>
-      <div class="interim" id="interim"></div>
-      <form id="textform" autocomplete="off">
-        <input id="textin" placeholder="…or type here and press Enter" />
-      </form>
-    </footer>
-  </main>
   <script src="/static/app.js"></script>
 </body>
 </html>
