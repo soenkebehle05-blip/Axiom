@@ -178,7 +178,7 @@ TOOL_SPECS = [
         },
     ),
     ToolSpec(
-        name="play_briefing_music",
+        name="play_briefing_music.mp4",
         description="Play background music for briefings from static file.",
         input_schema={
             "type": "object",
@@ -195,7 +195,7 @@ TOOL_SPECS = [
 ]
 
 
-SIDE_EFFECT_TOOLS = {"create_event", "remember_preference", "add_note", "complete_note", "play_briefing_music", "stop_briefing_music"}
+SIDE_EFFECT_TOOLS = {"create_event", "remember_preference", "add_note", "complete_note", "play_briefing_music.mp4", "stop_briefing_music"}
 TOOL_NAMES = {tool.name for tool in TOOL_SPECS}
 
 
