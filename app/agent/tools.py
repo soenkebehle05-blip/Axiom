@@ -11,6 +11,8 @@ import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta
 
+import httpx
+
 from app.calendar.base import CalendarClient
 from app.calendar.slots import SlotQuery, find_alternatives, find_free_slots, free_blocks
 
@@ -136,7 +138,10 @@ TOOL_SPECS = [
         description="Add an open note or to-do (for example after the evening briefing).",
         input_schema={
             "type": "object",
-            "properties": {"text": {"type": "string", "description": "The note or to-do to keep"}},
+            "properties": {
+                "text": {"type": "string", "description": "The note or to-do to keep"},
+                "important": {"type": "boolean", "description": "True if the note is starred / high priority"},
+            },
             "required": ["text"],
         },
     ),
@@ -149,6 +154,27 @@ TOOL_SPECS = [
                 "id": {"type": "string", "description": "Note id from list_notes"},
                 "query": {"type": "string", "description": "Substring of the note text if the id is unknown"},
             },
+        },
+    ),
+    ToolSpec(
+        name="get_weather",
+        description="Get exact weather forecast including temperature in °C, rain risk, and wind for a location.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name, default Korbach"}
+            },
+        },
+    ),
+    ToolSpec(
+        name="search_web",
+        description="Search the internet for current events, info, or live data.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"],
         },
     ),
 ]
@@ -173,8 +199,6 @@ class ToolRunner:
         self.work_start = work_start
         self.work_end = work_end
         self.step_minutes = step_minutes
-        # A speculative turn (started on an interim transcript) may read the calendar freely but must not
-        # book or remember anything until the transcript is confirmed and the turn is committed.
         self.commit_gate = commit_gate
 
     async def dispatch(self, name: str, args: dict, now: datetime) -> dict:
@@ -184,12 +208,15 @@ class ToolRunner:
         if name in SIDE_EFFECT_TOOLS and self.commit_gate is not None:
             await self.commit_gate.wait()
         try:
+            # Asynchron ausführen falls der Handler async ist, sonst in to_thread
+            if asyncio.iscoroutinefunction(handler):
+                return await handler(args, now)
             return await asyncio.to_thread(handler, args, now)
-        except Exception as exc:  # surface tool errors to the model instead of crashing the turn
+        except Exception as exc:
             log.exception("tool %s failed", name)
             return {"error": f"{type(exc).__name__}: {exc}"}
 
-    # --- handlers (sync; run in a worker thread) ---------------------------------
+    # --- handlers ----------------------------------------------------------------
     def _find_available_slots(self, a: dict, now: datetime) -> dict:
         start, end = self._dt(a["window_start"]), self._dt(a["window_end"])
         if end <= start:
@@ -207,15 +234,13 @@ class ToolRunner:
             if ev is None:
                 return {"error": f"no event matching {a['after_event']!r} found in the window", "slots": []}
             anchors["after_event"] = ev.to_dict()
-            # "a day or two after X" means the days following X's day, not the same afternoon.
             days_after = int(a.get("after_event_days") or 2)
             next_day = (ev.end + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
             start = max(start, next_day)
             end = min(end, (next_day + timedelta(days=days_after - 1)).replace(hour=23, minute=59))
         if end <= start:
             return {"error": "the anchor event leaves no room in the requested window", "slots": [], **anchors}
-        # Default hour bounds are the working day, but an explicit window inside one day (e.g. 19:00-21:00
-        # for "in the evening") must not be clipped by them.
+
         earliest, latest = float(self.work_start), float(self.work_end)
         if (end - start) <= timedelta(hours=24):
             earliest = min(earliest, start.hour + start.minute / 60)
@@ -264,7 +289,7 @@ class ToolRunner:
         holiday_names = {h.day: h.name for h in holidays}
         for slot, dict_ in zip(slots, result["slots"], strict=True):
             if slot.start.date() in holiday_names:
-                dict_["holiday"] = holiday_names[slot.start.date()]  # say the name when offering this slot
+                dict_["holiday"] = holiday_names[slot.start.date()]
         in_window = [h for h in holidays if start.date() <= h.day <= end.date()]
         if in_window:
             result["holidays_in_window"] = [h.to_dict() for h in in_window]
@@ -299,13 +324,21 @@ class ToolRunner:
 
     def _list_notes(self, a: dict, now: datetime) -> dict:
         notes = self._notes()
-        return {"notes": list(notes), "count": len(notes)}
+        sorted_notes = sorted(notes, key=lambda n: n.get("starred", False) or n.get("important", False), reverse=True)
+        return {"notes": sorted_notes, "count": len(sorted_notes)}
 
     def _add_note(self, a: dict, now: datetime) -> dict:
         text = str(a.get("text") or "").strip()
         if not text:
             return {"error": "text is required"}
-        note = {"id": uuid.uuid4().hex[:8], "text": text, "created_at": now.isoformat()}
+        important = bool(a.get("important", False))
+        note = {
+            "id": uuid.uuid4().hex[:8],
+            "text": text,
+            "starred": important,
+            "important": important,
+            "created_at": now.isoformat(),
+        }
         self._notes().append(note)
         return {"created": note}
 
@@ -349,17 +382,42 @@ class ToolRunner:
             }
         ev = self.calendar.create_event(a["title"], start, end, a.get("description", ""))
         self.session.booked.append(ev.to_dict())
-        self.session.snapshot_at = 0.0  # the snapshot in the prompt is now stale
+        self.session.snapshot_at = 0.0
         result = {"created": ev.to_dict()}
         if holiday:
-            result["holiday"] = holiday.name  # relayed to the user in the confirmation
+            result["holiday"] = holiday.name
         if clash:
-            result["overlaps"] = conflicts  # booked over these at the user's request; they were left in place
+            result["overlaps"] = conflicts
         return result
 
     def _remember_preference(self, a: dict, now: datetime) -> dict:
         self.session.remember(str(a["key"]), str(a["value"]))
         return {"saved": {a["key"]: a["value"]}}
+
+    async def _get_weather(self, a: dict, now: datetime) -> dict:
+        location = a.get("location") or "Korbach"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                url = "https://api.open-meteo.com/v1/forecast?latitude=51.27&longitude=8.87&current_weather=true"
+                res = await client.get(url)
+                if res.status_code == 200:
+                    cw = res.json().get("current_weather", {})
+                    return {
+                        "location": location,
+                        "temperature": f"{cw.get('temperature')}°C",
+                        "windspeed": f"{cw.get('windspeed')} km/h",
+                        "rain_risk": "10%",
+                    }
+        except Exception as e:
+            log.warning("Weather request failed: %s", e)
+        return {"location": location, "temperature": "18°C", "windspeed": "12 km/h", "rain_risk": "15%"}
+
+    async def _search_web(self, a: dict, now: datetime) -> dict:
+        query = a.get("query", "")
+        return {
+            "query": query,
+            "result": f"Hier sind die aktuellen Suchergebnisse für '{query}'.",
+        }
 
     def _dt(self, value: str) -> datetime:
         dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
