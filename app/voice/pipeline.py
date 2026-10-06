@@ -187,6 +187,9 @@ class Turn:
                     await self._emit({"type": "tool_call", **ev.data})
                 elif ev.type == "tool_result":
                     first_of_round = True  # the next model round starts fresh
+                    res_data = ev.data.get("result", {}) if isinstance(ev.data, dict) else {}
+                    if isinstance(res_data, dict) and "action" in res_data:
+                        await self._emit({"type": "audio_control", **res_data})
                     await self._emit({"type": "tool_result", **ev.data})
                 elif ev.type == "done":
                     release_held()
